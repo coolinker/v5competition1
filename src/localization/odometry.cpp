@@ -26,6 +26,9 @@
 static Pose current_pose = {0.0, 0.0, 0.0};
 static double prev_left_ticks  = 0.0;
 static double prev_right_ticks = 0.0;
+#ifdef ROBOT_6MOTOR
+static double prev_imu_rotation = 0.0;
+#endif
 
 void odometry_update() {
     // 1. Read current encoder positions
@@ -44,19 +47,28 @@ void odometry_update() {
     double ds         = (dist_L + dist_R) / 2.0;
     double dtheta_enc = (dist_R - dist_L) / WHEEL_TRACK;
 
-    // 5. Fuse heading with IMU (IMU is more accurate than encoders)
+    // 5. Fuse heading with IMU
+#ifdef ROBOT_6MOTOR
+    // Competition: fuse DELTAS to avoid heading() wrap-around at 0°/360°
+    double imu_rotation = get_imu_rotation_rad();
+    double dtheta_imu   = imu_rotation - prev_imu_rotation;
+    prev_imu_rotation   = imu_rotation;
+    double dtheta = IMU_FUSION_ALPHA * dtheta_imu
+                  + (1.0 - IMU_FUSION_ALPHA) * dtheta_enc;
+#else
+    // Entry-level: simple absolute fusion (kept for 2-motor prototype)
     double theta_imu = get_imu_heading_rad();
     double theta_enc = current_pose.theta + dtheta_enc;
     double theta_fused = IMU_FUSION_ALPHA * theta_imu
                        + (1.0 - IMU_FUSION_ALPHA) * theta_enc;
-
     double dtheta = theta_fused - current_pose.theta;
+#endif
 
     // 6. Update pose (midpoint approximation for curved paths)
     double mid_theta = current_pose.theta + dtheta / 2.0;
     current_pose.x     += ds * cos(mid_theta);
     current_pose.y     += ds * sin(mid_theta);
-    current_pose.theta  = theta_fused;
+    current_pose.theta += dtheta;
 
     // 7. Save for next iteration
     prev_left_ticks  = left_ticks;
@@ -73,4 +85,7 @@ void set_pose(const Pose& new_pose) {
     reset_imu();
     prev_left_ticks  = 0;
     prev_right_ticks = 0;
+#ifdef ROBOT_6MOTOR
+    prev_imu_rotation = 0.0;
+#endif
 }

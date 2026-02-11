@@ -1,101 +1,133 @@
 // ============================================================================
-//  main.cpp — VEX V5 Competition Template
-// ============================================================================
-//  This file wires everything together:
-//    • Hardware definitions (motors, IMU, brain)
-//    • Competition callbacks (pre_auton, autonomous, usercontrol)
-//    • Background odometry loop
-//
-//  To customise your robot, edit:
-//    1. config.h       — tuning constants (ports, PID gains, dimensions)
-//    2. autonomous()   — your autonomous routine
-//    3. usercontrol()  — your driver-control code
+//  main.cpp — Simple motor test (no wheels, no competition switch needed)
 // ============================================================================
 
 #include "vex.h"
 #include "config.h"
-#include "hal/motors.h"
-#include "hal/imu.h"
-#include "hal/time.h"
-#include "localization/odometry.h"
-#include "motion/drive_to_pose.h"
-#include "motion/turn_to_heading.h"
-#include <cmath>
 
 using namespace vex;
 
 // ============================================================================
 //  Hardware Definitions
-//  These global objects are referenced by the HAL layer via `extern`.
-//  Change port numbers in config.h, gear ratios here.
+// ============================================================================
+//
+//  ARCHITECTURE HIGHLIGHT — EXTENDABILITY:
+//    Only this file and motors.cpp change between robot configurations.
+//    All upper layers (odometry, PID, motion, drive_to_pose) are reused.
+//
 // ============================================================================
 brain  Brain;
-competition Competition;
-controller Controller;
 
+// ── 2-Motor Entry-Level ────────────────────────────────────────────────────
+#ifdef ROBOT_2MOTOR
 motor  LeftDriveSmart  = motor(LEFT_MOTOR_PORT,  ratio18_1, false);
-motor  RightDriveSmart = motor(RIGHT_MOTOR_PORT, ratio18_1, true);   // reversed
-inertial DrivetrainInertial = inertial(IMU_PORT);
+motor  RightDriveSmart = motor(RIGHT_MOTOR_PORT, ratio18_1, false);
+#endif
+
+// ── 6-Motor Advanced ──────────────────────────────────────────────────────
+//
+//  Motor directions: left side reversed (motors face opposite direction)
+//  Blue cartridge (ratio6_1) for maximum speed: 600 RPM
+//
+#ifdef ROBOT_6MOTOR
+motor  LeftFront  = motor(LEFT_FRONT_MOTOR_PORT,  ratio6_1, true);   // reversed
+motor  LeftMid    = motor(LEFT_MID_MOTOR_PORT,    ratio6_1, true);   // reversed
+motor  LeftRear   = motor(LEFT_REAR_MOTOR_PORT,   ratio6_1, true);   // reversed
+motor  RightFront = motor(RIGHT_FRONT_MOTOR_PORT, ratio6_1, false);
+motor  RightMid   = motor(RIGHT_MID_MOTOR_PORT,   ratio6_1, false);
+motor  RightRear  = motor(RIGHT_REAR_MOTOR_PORT,  ratio6_1, false);
+#endif
 
 // ============================================================================
-//  Pre-Autonomous  —  runs once on power-up
+//  Main — runs immediately on power-up, no competition switch needed
 // ============================================================================
-void pre_auton() {
-    // Calibrate the IMU (blocks ~2 s, required for heading)
-    calibrate_imu();
+int main() {
+    Brain.Screen.clearScreen();
+    Brain.Screen.setCursor(1, 1);
+
+#ifdef ROBOT_2MOTOR
+    Brain.Screen.print("2-Motor Config");
+
+    Brain.Screen.newLine();
+    Brain.Screen.print("Testing Port 1...");
+
+    // Test port 1 alone
+    LeftDriveSmart.spin(forward, 50, percent);
+    wait(3, seconds);
+    LeftDriveSmart.stop();
 
     Brain.Screen.clearScreen();
     Brain.Screen.setCursor(1, 1);
-    Brain.Screen.print("Ready.");
-}
+    Brain.Screen.print("Testing Port 2...");
 
-// ============================================================================
-//  Autonomous  —  your 15-second / 1-minute routine
-// ============================================================================
-//  Example: drive a simple L-shaped path.
-//  Replace with your actual autonomous strategy.
-// ============================================================================
-void autonomous() {
-    set_pose({0, 0, 0});           // reset origin at current position
+    // Test port 2 alone
+    RightDriveSmart.spin(forward, 50, percent);
+    wait(3, seconds);
+    RightDriveSmart.stop();
 
-    drive_to_pose({1.0, 0.0, 0});  // drive 1 m forward
-    turn_to_heading(M_PI / 2.0);   // turn 90° left
-    drive_to_pose({1.0, 0.8, 0});  // drive 0.8 m to the side
+    Brain.Screen.clearScreen();
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("Testing BOTH...");
 
-    stop_drive_motors();
-}
+    // Test both together
+    LeftDriveSmart.spin(forward, 50, percent);
+    RightDriveSmart.spin(forward, 50, percent);
+    wait(3, seconds);
+    LeftDriveSmart.stop();
+    RightDriveSmart.stop();
+#endif
 
-// ============================================================================
-//  User Control  —  tank-drive by default
-// ============================================================================
-//  Left stick (Axis3)  → left wheels
-//  Right stick (Axis2) → right wheels
-//  Modify to add mechanisms (intakes, lifts, clamps, etc.)
-// ============================================================================
-void usercontrol() {
+#ifdef ROBOT_6MOTOR
+    Brain.Screen.print("6-Motor Config");
+
+    // Test left side (3 motors)
+    Brain.Screen.newLine();
+    Brain.Screen.print("Testing LEFT side...");
+    LeftFront.spin(forward, 50, percent);
+    LeftMid.spin(forward, 50, percent);
+    LeftRear.spin(forward, 50, percent);
+    wait(3, seconds);
+    LeftFront.stop();
+    LeftMid.stop();
+    LeftRear.stop();
+
+    // Test right side (3 motors)
+    Brain.Screen.clearScreen();
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("Testing RIGHT side...");
+    RightFront.spin(forward, 50, percent);
+    RightMid.spin(forward, 50, percent);
+    RightRear.spin(forward, 50, percent);
+    wait(3, seconds);
+    RightFront.stop();
+    RightMid.stop();
+    RightRear.stop();
+
+    // Test ALL 6 together
+    Brain.Screen.clearScreen();
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("Testing ALL 6...");
+    LeftFront.spin(forward, 50, percent);
+    LeftMid.spin(forward, 50, percent);
+    LeftRear.spin(forward, 50, percent);
+    RightFront.spin(forward, 50, percent);
+    RightMid.spin(forward, 50, percent);
+    RightRear.spin(forward, 50, percent);
+    wait(3, seconds);
+    LeftFront.stop();
+    LeftMid.stop();
+    LeftRear.stop();
+    RightFront.stop();
+    RightMid.stop();
+    RightRear.stop();
+#endif
+
+    Brain.Screen.clearScreen();
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("Done.");
+
+    // Keep program alive
     while (true) {
-        double left_pct  = Controller.Axis3.position();
-        double right_pct = Controller.Axis2.position();
-
-        LeftDriveSmart.spin(fwd,  left_pct,  percent);
-        RightDriveSmart.spin(fwd, right_pct, percent);
-
-        wait(20, msec);
-    }
-}
-
-// ============================================================================
-//  Main  —  binds callbacks and runs the background odometry loop
-// ============================================================================
-int main() {
-    Competition.autonomous(autonomous);
-    Competition.drivercontrol(usercontrol);
-
-    pre_auton();
-
-    // Background loop: keep odometry up-to-date at all times
-    while (true) {
-        odometry_update();
-        wait(LOOP_INTERVAL_MS, msec);
+        wait(100, msec);
     }
 }

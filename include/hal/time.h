@@ -6,6 +6,8 @@
 //  In host-side tests, these are replaced by mock implementations.
 // ============================================================================
 
+#include "hal/hal_log.h"
+
 /// Get elapsed time since program start, in seconds.
 double get_time_sec();
 

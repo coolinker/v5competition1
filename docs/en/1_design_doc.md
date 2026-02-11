@@ -6,16 +6,18 @@
 
 1. [Overview](#1-overview)
 2. [System Architecture](#2-system-architecture)
-3. [Layer-by-Layer Design](#3-layer-by-layer-design)
-   - 3.1 [Config](#31-config)
-   - 3.2 [HAL — Hardware Abstraction Layer](#32-hal--hardware-abstraction-layer)
-   - 3.3 [Localization — Odometry](#33-localization--odometry)
-   - 3.4 [Control — PID & Motion Profile](#34-control--pid--motion-profile)
-   - 3.5 [Motion — High-level Commands](#35-motion--high-level-commands)
-   - 3.6 [Main — Application Entry](#36-main--application-entry)
-4. [Data Flow](#4-data-flow)
-5. [Key Algorithms](#5-key-algorithms)
-6. [Future Roadmap](#6-future-roadmap)
+3. [Robot Configurations](#3-robot-configurations)
+4. [Layer-by-Layer Design](#4-layer-by-layer-design)
+   - 4.1 [Config](#41-config)
+   - 4.2 [HAL — Hardware Abstraction Layer](#42-hal--hardware-abstraction-layer)
+   - 4.3 [Localization — Odometry](#43-localization--odometry)
+   - 4.4 [Control — PID & Motion Profile](#44-control--pid--motion-profile)
+   - 4.5 [Motion — High-level Commands](#45-motion--high-level-commands)
+   - 4.6 [Main — Application Entry](#46-main--application-entry)
+5. [Data Flow](#5-data-flow)
+6. [Key Algorithms](#6-key-algorithms)
+7. [Architecture Strengths Demonstrated](#7-architecture-strengths-demonstrated)
+8. [Future Roadmap](#8-future-roadmap)
 
 ---
 
@@ -27,7 +29,9 @@ This project is a modular software architecture for a VEX V5 competition robot. 
 - **Easy to understand** — every file has one clear responsibility
 - **Extensible** — ready to grow into a top-level competition codebase
 
-The robot uses a **differential drive** (two powered wheels, one on each side). The software provides:
+The codebase supports **multiple robot configurations** — from a simple 2-motor starter bot to an advanced 6-motor competition drivetrain — all sharing the same control, localization, and motion code. Switch between them by changing one `#define` in `config.h`.
+
+The software provides:
 
 1. **Position tracking** (odometry) — "Where am I on the field?"
 2. **PID control** — "How do I smoothly reach my target?"
@@ -70,31 +74,90 @@ The software is organized in **layers**, like a stack. Higher layers use lower l
 
 ---
 
-## 3. Layer-by-Layer Design
+## 3. Robot Configurations
 
-### 3.1 Config
+The codebase ships with two ready-to-use drivetrain configurations.
+Select one by uncommenting a single `#define` in `config.h`:
+
+| | **ROBOT_2MOTOR** (entry-level) | **ROBOT_6MOTOR** (advanced) |
+|---|---|---|
+| **Motors** | 1 left + 1 right | 3 left + 3 right |
+| **Cartridge** | Green 18:1 (200 RPM) | Blue 6:1 (600 RPM) |
+| **Wheels** | 4" (0.1016 m) | 3.25" (0.08255 m) |
+| **Top speed** | 0.8 m/s | 1.2 m/s |
+| **Acceleration** | 1.5 m/s² | 3.0 m/s² |
+| **Torque** | 1× baseline | 3× baseline |
+| **Turn tolerance** | ~2° | ~1.4° |
+| **Best for** | Learning, prototyping | Competition, pushing |
+
+### What changes between configs?
+
+```
+  Files with config-specific code:     Files that stay IDENTICAL:
+  ────────────────────────────         ──────────────────────────
+  config.h          ← constants        control/pid.h & .cpp
+  motors.cpp        ← HAL impl         control/motion_profile.h & .cpp
+  main.cpp          ← hw objects       hal/motors.h   ← API unchanged!
+  odometry.cpp      ← 6M delta fusion  hal/imu.h & .cpp
+  drive_to_pose.cpp ← 6M Boomerang     hal/time.h & .cpp
+  turn_to_heading.cpp ← 6M PID tuning  localization/odometry.h ← API unchanged!
+                                        motion/drive_to_pose.h
+                                        motion/turn_to_heading.h
+```
+
+**Config-specific code uses `#ifdef ROBOT_6MOTOR` blocks** — the 2-motor code path is preserved unchanged in `#else` branches. All header APIs remain identical.
+
+### 6-Motor Wiring Diagram
+
+```
+  Port 1 [L-Front]  ──────  [R-Front]  Port 4
+  Port 2 [L-Mid  ]  ──────  [R-Mid  ]  Port 5    ← encoder source
+  Port 3 [L-Rear ]  ──────  [R-Rear ]  Port 6
+                   IMU = Port 10
+```
+
+Middle motors are used for encoder readings — they have the most consistent ground contact and are least affected by turning scrub.
+
+---
+
+## 4. Layer-by-Layer Design
+
+### 4.1 Config
 
 **Files:** `include/config.h`
 
-A single header file with all tunable constants. Every number that you might want to change (wheel size, motor ports, PID gains) lives here.
+A single header file with all tunable constants, organized by robot configuration. The file uses compile-time `#ifdef` guards to select one configuration, with a build-time error if none or both are selected.
 
-| Constant | What it means | Example Value |
+**Shared constants** (same for all configs):
+
+| Constant | What it means |
+|----------|---------------|
+| `WHEEL_CIRCUMFERENCE` | Derived: π × diameter (auto-calculated) |
+| `LOOP_INTERVAL_MS` | Control loop period (10 ms) |
+
+**Per-configuration constants** (each config defines its own):
+
+| Constant | 2-Motor Value | 6-Motor Value |
 |----------|---------------|---------------|
-| `WHEEL_DIAMETER` | Wheel diameter in meters | 0.1016 (4") |
-| `WHEEL_TRACK` | Distance between left and right wheels | 0.381 (15") |
-| `TICKS_PER_REV` | Encoder ticks per wheel revolution | 360 |
-| `WHEEL_CIRCUMFERENCE` | Derived: π × diameter | auto-calculated |
-| `TURN_KP/KI/KD` | PID gains for turning | 2.0 / 0.0 / 0.1 |
-| `DRIVE_KP/KI/KD` | PID gains for driving straight | 5.0 / 0.0 / 0.3 |
-| `MAX_VELOCITY` | Top speed during autonomous (m/s) | 0.8 |
-| `MAX_ACCELERATION` | How fast we speed up (m/s²) | 1.5 |
-| `LOOP_INTERVAL_MS` | Control loop period | 10 ms |
+| `WHEEL_DIAMETER` | 0.1016 m (4") | 0.08255 m (3.25") |
+| `WHEEL_TRACK` | 0.381 m (15") | 0.330 m (13") |
+| `TICKS_PER_REV` | 360 (green) | 300 (blue) |
+| `TURN_KP/KI/KD` | 2.0 / 0.0 / 0.1 | 3.5 / 0.02 / 0.25 |
+| `DRIVE_KP/KI/KD` | 5.0 / 0.0 / 0.3 | 8.0 / 0.05 / 0.5 |
+| `MAX_VELOCITY` | 0.8 m/s | 1.2 m/s |
+| `MAX_ACCELERATION` | 1.5 m/s² | 3.0 m/s² |
+| `MOTORS_PER_SIDE` | 1 | 3 |
+| `DRIVE_INTEGRAL_LIMIT` | — | 5.0 (anti-windup) |
+| `DRIVE_D_FILTER` | — | 0.7 (derivative EMA) |
+| `TURN_INTEGRAL_LIMIT` | — | 3.0 (anti-windup) |
+| `TURN_D_FILTER` | — | 0.5 (derivative EMA) |
+| `BOOMERANG_LEAD` | — | 0.6 (carrot lead factor) |
 
 **Why one file?** When you're tuning your robot at a competition, you want ONE place to change numbers, not hunting through 10 files.
 
 ---
 
-### 3.2 HAL — Hardware Abstraction Layer
+### 4.2 HAL — Hardware Abstraction Layer
 
 **Files:**
 - `include/hal/motors.h` + `src/hal/motors.cpp`
@@ -131,9 +194,11 @@ inertial.heading(degrees)  →    get_imu_heading_rad()
 
 **Design decision:** Motor voltages are clamped to [-12, +12] inside the HAL, so upper layers don't need to worry about exceeding hardware limits.
 
+**Multi-motor transparency:** In the 6-motor config, `set_drive_motors()` sends the same voltage to all 3 motors on a side. `get_left_encoder_ticks()` reads from the designated primary encoder (middle motor). The API signature is identical — callers never know how many physical motors exist.
+
 ---
 
-### 3.3 Localization — Odometry
+### 4.3 Localization — Odometry
 
 **Files:** `include/localization/odometry.h` + `src/localization/odometry.cpp`
 
@@ -158,16 +223,20 @@ Pose = { x, y, θ }
    - Linear distance: `d = (d_left + d_right) / 2`
    - Heading change from encoders: `dθ_enc = (d_right - d_left) / wheel_track`
 5. **Fuse with IMU** — blend encoder heading with IMU heading:
-   - `θ = α × θ_imu + (1-α) × θ_encoder` where α = 0.98 (trust IMU more)
+   - **2-motor** (absolute fusion): `θ = α × θ_imu + (1-α) × θ_encoder` where α = 0.98
+   - **6-motor** (delta fusion): `Δθ = α × Δθ_imu + (1-α) × Δθ_encoder`
+     Uses `get_imu_rotation_rad()` deltas instead of absolute `heading()` to avoid the catastrophic 0°/360° wrap-around bug that occurs near heading boundaries.
 6. **Update position** using midpoint approximation:
    - `x += d × cos(θ_mid)`
    - `y += d × sin(θ_mid)`
 
 **Why IMU fusion?** Encoders drift when wheels slip. The IMU doesn't slip, but it drifts slowly over time. Combining both gives the best accuracy.
 
+**Why delta fusion for 6-motor?** The 2-motor absolute fusion (`α × heading + (1-α) × encoder`) works fine at low speeds but has a critical flaw: when heading crosses 0°/360° (≈ 0/2π radians), the weighted average produces nonsensical jumps (e.g., `0.98 × 0.01 + 0.02 × 6.27 ≈ 0.14` instead of the correct `≈ 0.01`). Delta fusion avoids this entirely by fusing heading *changes*, which are always small.
+
 ---
 
-### 3.4 Control — PID & Motion Profile
+### 4.4 Control — PID & Motion Profile
 
 **Files:**
 - `include/control/pid.h` + `src/control/pid.cpp`
@@ -189,6 +258,16 @@ Output = Kp × Error          ← Proportional: "How far off am I?"
 - **P** (Proportional): The farther away, the harder you press the gas → might overshoot
 - **I** (Integral): If you've been too far for too long, push harder → eliminates permanent offset
 - **D** (Derivative): If you're approaching fast, start braking → reduces overshoot
+
+**Optional enhancements** (6-motor config activates all three):
+
+| Enhancement | Method | What it does |
+|-------------|--------|-------------|
+| **Anti-windup** | `set_integral_limit(limit)` | Clamps `∫error·dt` to ±limit, preventing integral explosion when motors are saturated (e.g., during pushing matches) |
+| **Derivative EMA filter** | `set_d_filter(alpha)` | Low-pass filter: `filtered = α×prev + (1-α)×raw`. Smooths noisy derivative spikes without adding phase lag. alpha=0 disables |
+| **Output clamping** | `set_output_limit(limit)` | Symmetric ±limit clamp on final output. Prevents commanding voltages beyond hardware capability |
+
+All three are **disabled by default** (set to 0). The 2-motor config runs PID in basic mode for simplicity. The 6-motor motion code calls the setters after `reset()` to activate competition-grade behavior.
 
 ---
 
@@ -217,7 +296,7 @@ The smallest of these three constraints wins.
 
 ---
 
-### 3.5 Motion — High-level Commands
+### 4.5 Motion — High-level Commands
 
 **Files:**
 - `include/motion/turn_to_heading.h` + `src/motion/turn_to_heading.cpp`
@@ -233,6 +312,8 @@ Turns the robot in place to face a specific direction. Uses PID control on the h
 3. PID → angular velocity → differential wheel voltages
 4. Exit when error stays small for `TURN_SETTLE_TIME_MS`, or timeout
 
+**6-motor enhancement:** After `reset()`, the turn PID activates anti-windup (`TURN_INTEGRAL_LIMIT`), derivative filter (`TURN_D_FILTER`), and output clamping (12V) for smoother, more precise turns with the higher-torque drivetrain.
+
 **Exit conditions (why both?):**
 - **Settle time**: Ensures the robot has actually stopped, not just passing through the target
 - **Timeout**: Safety net — if something goes wrong, don't spin forever
@@ -241,12 +322,11 @@ Turns the robot in place to face a specific direction. Uses PID control on the h
 
 #### drive_to_pose
 
-Drives the robot to a specific (x, y) coordinate on the field. Two-phase approach:
+Drives the robot to a specific (x, y, θ) pose. The strategy differs by configuration:
 
+**2-motor — Turn-then-drive** (entry-level):
 1. **Phase 1 — Turn**: Rotate in place to face the target point
-2. **Phase 2 — Drive**: Move forward with motion-profiled velocity
-   - Motion profile provides smooth acceleration/deceleration
-   - Heading correction keeps the robot driving straight (compensates for drift)
+2. **Phase 2 — Drive**: Move forward with motion-profiled velocity + heading correction
 
 ```
          Target (x, y)
@@ -259,25 +339,39 @@ Drives the robot to a specific (x, y) coordinate on the field. Two-phase approac
   Start
 ```
 
+**6-motor — Boomerang controller** (competition-grade):
+Instead of stopping to turn, a "carrot" point is placed behind the target along its heading vector. The robot aims at the carrot; as distance shrinks, the carrot converges to the target, producing a smooth curved approach that arrives at the correct final heading.
+
+```
+         carrot ◀── lead ──── Target
+           ╱                     ↑ θ_final
+        Robot
+```
+
+**Boomerang features:**
+- Smooth curved approach — no intermediate stops
+- Final heading control — arrives facing the desired direction
+- Reverse driving support (`reverse=true` parameter)
+- Cosine throttle — slows down when heading error is large
+- Acceleration slew rate limiting — prevents wheel slip
+- Full angular PID with anti-windup, D-filter, and output clamping
+
 ---
 
-### 3.6 Main — Application Entry
+### 4.6 Main — Application Entry
 
 **File:** `src/main.cpp`
 
-The entry point glues everything together:
+The entry point glues everything together. It uses `#ifdef` to create the correct motor objects for the selected configuration:
 
-1. **Hardware definitions** — creates motor, IMU, and brain objects
-2. **`pre_auton()`** — calibrates IMU on startup
-3. **`autonomous()`** — your 15-second autonomous routine (example L-path included)
-4. **`usercontrol()`** — tank-drive with left/right joysticks
-5. **`main()`** — registers callbacks with the VEX competition system, then runs the odometry background loop
+- **2-motor**: 2 motors → `LeftDriveSmart`, `RightDriveSmart`
+- **6-motor**: 6 motors → `LeftFront/Mid/Rear`, `RightFront/Mid/Rear` (blue cartridge, left side reversed)
 
-**To customize:** Only edit `autonomous()` and `usercontrol()`. Everything else is infrastructure.
+Note: motor `reverse` flags in the 6-motor config account for physical mounting direction — left-side motors face opposite to right-side motors.
 
 ---
 
-## 4. Data Flow
+## 5. Data Flow
 
 Here's how data flows through the system during autonomous:
 
@@ -311,7 +405,7 @@ Encoders + IMU
 
 ---
 
-## 5. Key Algorithms
+## 6. Key Algorithms
 
 ### Angle Normalization
 
@@ -344,20 +438,60 @@ Where:
 
 ---
 
-## 6. Future Roadmap
+## 7. Architecture Strengths Demonstrated
+
+The 6-motor configuration proves the architecture works as designed:
+
+### Flexibility (adapt to different hardware)
+- Switching from 2 motors to 6 motors requires changing **config-specific `#ifdef` blocks** in a handful of files
+- A single `#define` in `config.h` selects the entire configuration
+- Compile-time guards prevent invalid combinations
+- Config-specific behaviors (Boomerang, delta fusion) are isolated in `#ifdef`/`#else` blocks — the 2-motor code path is always preserved unchanged
+
+### Reusability (same code, different robots)
+- `PIDController` class works identically for both configs — only the *gains* and optional enhancements differ
+- `MotionProfile` works unchanged — only `MAX_VELOCITY` and `MAX_ACCELERATION` differ
+- HAL APIs (`get_left_encoder_ticks()`, `set_drive_motors()`) hide all multi-motor complexity
+- Odometry, drive_to_pose, and turn_to_heading share the same API — config-specific behavior is selected at compile time
+
+### Extendability (easy to add more)
+- Adding an 8-motor config (e.g., mecanum) follows the same pattern:
+  1. Add `#define ROBOT_8MOTOR` section in `config.h`
+  2. Add motor control logic in `motors.cpp`
+  3. Add motor declarations in `main.cpp`
+  4. All other files remain untouched
+- Adding subsystems (intake, catapult, pneumatics) follows the same HAL pattern
+
+### Separation of Concerns
+```
+  What changes           Where it lives         What DOESN'T change
+  ─────────────          ──────────────         ─────────────────────
+  Number of motors   →   motors.cpp              PID algorithm
+  Motor ports        →   config.h                Odometry math
+  Wheel dimensions   →   config.h                Motion profiling
+  PID gains          →   config.h                Drive-to-pose logic
+  Cartridge type     →   main.cpp                Turn-to-heading logic
+```
+
+---
+
+## 8. Future Roadmap
 
 This codebase is designed to grow. Here are natural next steps, ordered by impact:
 
-| Priority | Feature | Difficulty | Benefit |
-|----------|---------|------------|---------|
-| 1 | **PID tuning on the real robot** | Easy | Everything else depends on this |
-| 2 | **Add mechanisms** (intake, lift, clamp) | Easy | Game-specific scoring |
-| 3 | **Anti-windup for PID** | Medium | Prevents integral wind-up during saturated outputs |
-| 4 | **Tracking wheels** for odometry | Medium | Much more accurate position tracking |
-| 5 | **Pure pursuit** path following | Hard | Smooth curved paths instead of turn-then-drive |
-| 6 | **S-curve motion profile** | Medium | Jerk-limited motion for less wheel slip |
-| 7 | **Kalman filter** for localization | Hard | Optimal sensor fusion under noise |
-| 8 | **Vision sensor integration** | Hard | Absolute position fixes, object detection |
+| Priority | Feature | Difficulty | Status |
+|----------|---------|------------|--------|
+| 1 | **PID tuning on the real robot** | Easy | Ongoing — tune on field |
+| 2 | **Add mechanisms** (intake, lift, clamp) | Easy | Next step |
+| ~~3~~ | ~~**Anti-windup for PID**~~ | ~~Medium~~ | ✅ Done — `set_integral_limit()` |
+| ~~3b~~ | ~~**Derivative filter for PID**~~ | ~~Easy~~ | ✅ Done — `set_d_filter()` |
+| ~~3c~~ | ~~**Output clamping for PID**~~ | ~~Easy~~ | ✅ Done — `set_output_limit()` |
+| ~~4~~ | ~~**IMU heading wrap-around fix**~~ | ~~Medium~~ | ✅ Done — delta-based IMU fusion (6M) |
+| ~~5~~ | ~~**Curved path following**~~ | ~~Hard~~ | ✅ Done — Boomerang controller (6M) |
+| 6 | **Tracking wheels** for odometry | Medium | Future — more accurate positioning |
+| 7 | **S-curve motion profile** | Medium | Future — jerk-limited motion |
+| 8 | **Kalman filter** for localization | Hard | Future — optimal sensor fusion |
+| 9 | **Vision sensor integration** | Hard | Future — absolute position fixes |
 
 ---
 

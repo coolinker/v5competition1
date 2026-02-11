@@ -7,6 +7,7 @@
 //
 //  FUTURE: Add get_imu_pitch(), get_imu_roll() for tilt detection.
 // ============================================================================
+#include "hal/hal_log.h"
 
 /// Get current heading from the IMU in radians [0, 2π).
 /// Automatically converts from VEX degrees to radians.

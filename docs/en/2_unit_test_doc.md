@@ -53,6 +53,8 @@ VEX robots run on ARM processors, but tests run on your **laptop/desktop** (x86/
 
 **Key insight:** The algorithm code (PID, MotionProfile, Odometry) is the same in both environments. Only the HAL changes — tests use **mock (fake) functions**, the robot uses **real hardware functions**.
 
+> **Multi-config note:** Unit tests are completely **configuration-independent**. Whether you use `ROBOT_2MOTOR` or `ROBOT_6MOTOR`, the same 23 tests validate the same PID, MotionProfile, and Odometry math. The tests use mock HAL functions that bypass all config-specific motor code. This demonstrates the architecture's reusability — algorithms are tested once and work for any drivetrain configuration.
+
 ### File Structure
 
 All tests live in a single file: `test/host_tests.cpp`
@@ -63,6 +65,7 @@ test/host_tests.cpp
 ├── Mock HAL Layer (fake hardware functions)
 ├── #include source files under test
 ├── PID Controller Tests (6 tests)
+├── PID Enhancement Tests (6 tests) — anti-windup, D-filter, output clamp
 ├── Motion Profile Tests (5 tests)
 ├── Odometry Tests (6 tests)
 └── main() — runs all tests
@@ -89,14 +92,20 @@ make test
   [ OK ] PID_PositiveErrorProducesPositiveOutput
   ... (more tests)
 
+[PID Enhancements]
+  ... (6 tests)
+
 [Motion Profile]
   ... (more tests)
 
 [Odometry]
   ... (more tests)
 
+[Drive Straight 1m]
+  ... (3 tests)
+
 ============================================
-  Results: 17 passed, 0 failed, 17 total
+  Results: 26 passed, 0 failed, 26 total
 ============================================
   ALL TESTS PASSED
 ```
@@ -219,6 +228,64 @@ Before each test, call `reset_all_mocks()` to start fresh.
 | **Setup** | Run 10 iterations (building integral), reset, compare with fresh PID |
 | **Expected** | Output after reset ≈ output from brand new PID |
 | **Why it matters** | Must reset between autonomous movements to avoid stale integral |
+
+---
+
+## 6b. Test Cases — PID Enhancements
+
+### Test 7: Anti-Windup Clamps Integral (Positive)
+
+| Item | Value |
+|------|-------|
+| **What it tests** | `set_integral_limit(2.0)` prevents integral from growing beyond ±2.0 |
+| **Setup** | Ki=1.0, 100 iterations with error=100, integral_limit=2.0 |
+| **Expected** | Output ≈ 2.0 (not 100+ as it would be without clamping) |
+| **Why it matters** | Prevents integral wind-up during motor saturation (e.g., pushing matches) |
+
+### Test 8: Anti-Windup Clamps Integral (Negative)
+
+| Item | Value |
+|------|-------|
+| **What it tests** | Anti-windup works symmetrically for negative errors |
+| **Setup** | Same as Test 7 but with negative error |
+| **Expected** | Output ≈ -2.0 |
+| **Why it matters** | Ensures clamping works in both directions |
+
+### Test 9: D-Filter Smooths Derivative
+
+| Item | Value |
+|------|-------|
+| **What it tests** | `set_d_filter(0.7)` attenuates derivative spikes |
+| **Setup** | Two D-only PIDs — one raw, one with EMA filter alpha=0.7 |
+| **Expected** | Filtered output < raw output on first error spike |
+| **Why it matters** | Reduces noise-induced jitter in motor commands |
+
+### Test 10: Output Limit Clamps Output
+
+| Item | Value |
+|------|-------|
+| **What it tests** | `set_output_limit(5.0)` clamps output to ±5.0 |
+| **Setup** | Kp=10.0, error=100, output_limit=5.0 |
+| **Expected** | Output = +5.0 (not 1000). Negative error → -5.0 |
+| **Why it matters** | Prevents commanding voltages beyond hardware capability |
+
+### Test 11: No Clamping When Disabled
+
+| Item | Value |
+|------|-------|
+| **What it tests** | Default output_limit=0 means no clamping |
+| **Setup** | Kp=10.0, error=100, no set_output_limit() call |
+| **Expected** | Output = 1000.0 (unclamped) |
+| **Why it matters** | Ensures backward compatibility — 2-motor config is unaffected |
+
+### Test 12: Reset Clears Enhanced State
+
+| Item | Value |
+|------|-------|
+| **What it tests** | `reset()` also clears EMA filtered derivative state |
+| **Setup** | PID with all enhancements enabled, 20 iterations, reset, compare with fresh |
+| **Expected** | Output after reset ≈ output from brand new PID with same settings |
+| **Why it matters** | Ensures no stale filter state carries over between autonomous movements |
 
 ---
 
@@ -380,11 +447,15 @@ Examples:
 | Module | # Tests | Coverage |
 |--------|---------|---------|
 | PID Controller | 6 | P, I, D terms individually, zero error, reset |
+| PID Enhancements | 6 | Anti-windup (±), D-filter, output clamp (on/off), reset |
 | Motion Profile | 5 | Accel, cruise, decel, zero, bounds |
 | Odometry | 6 | Init, set, forward, turn, backward, accumulation |
-| **Total** | **17** | **Core algorithms fully covered** |
+| Drive Straight 1m | 3 | Target degrees, speed ramp, stop condition |
+| **Total** | **26** | **Core algorithms + enhancements fully covered** |
 
 **Not tested (by design):**
 - `turn_to_heading` / `drive_to_pose` — These are integration-level (depend on control loop timing). Tested on-robot.
-- HAL functions — These just wrap VEX API calls; nothing to unit test.
-- `main.cpp` — Competition callbacks; tested by running the robot.
+- Boomerang controller — Integration-level; verified through on-robot system tests.
+- HAL functions — These just wrap VEX API calls; nothing to unit test. The 6-motor motor array logic is verified through on-robot component tests (see [Full Test Document](3_full_test_doc.md)).
+- `main.cpp` — Competition callbacks and motor declarations are config-specific; tested by running the robot.
+- Config selection (`#ifdef ROBOT_2MOTOR` / `ROBOT_6MOTOR`) — Compile-time guards; tested implicitly by building the project.

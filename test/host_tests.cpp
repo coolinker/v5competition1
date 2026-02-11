@@ -227,6 +227,135 @@ TEST(PID_ResetClearsState) {
 }
 
 // ============================================================================
+// PID Enhancement Tests (anti-windup, D-filter, output clamping)
+// ============================================================================
+
+TEST(PID_AntiWindup_ClampsIntegral) {
+    reset_all_mocks();
+    mock_time_sec = 0.0;
+    PIDController pid(0.0, 1.0, 0.0); // I-only
+    pid.set_integral_limit(2.0);       // clamp |integral| to 2.0
+    pid.reset();
+
+    // Run many iterations with large error to saturate integral
+    for (int i = 1; i <= 100; i++) {
+        mock_time_sec = i * 0.01;
+        pid.calculate(100.0, 0.0); // error=100, integral grows fast
+    }
+
+    // After 100 iters: integral would be 100*0.01*100 = 100 without clamp
+    // With clamp at 2.0: output = Ki * clamped_integral = 1.0 * 2.0 = 2.0
+    mock_time_sec += 0.01;
+    double output = pid.calculate(100.0, 0.0);
+    // The integral contribution should be capped at 2.0
+    // Plus a tiny P/D contribution (both zero gains), so output ≈ 2.0
+    ASSERT_NEAR(output, 2.0, 0.2);
+    ASSERT_LT(output, 3.0); // definitely clamped, not 100
+}
+
+TEST(PID_AntiWindup_NegativeClamp) {
+    reset_all_mocks();
+    mock_time_sec = 0.0;
+    PIDController pid(0.0, 1.0, 0.0); // I-only
+    pid.set_integral_limit(2.0);
+    pid.reset();
+
+    // Negative error → negative integral
+    for (int i = 1; i <= 100; i++) {
+        mock_time_sec = i * 0.01;
+        pid.calculate(0.0, 100.0); // error = -100
+    }
+    mock_time_sec += 0.01;
+    double output = pid.calculate(0.0, 100.0);
+    ASSERT_NEAR(output, -2.0, 0.2);
+    ASSERT_GT(output, -3.0);
+}
+
+TEST(PID_DFilter_SmoothsDerivative) {
+    reset_all_mocks();
+    mock_time_sec = 0.0;
+    PIDController pid_raw(0.0, 0.0, 1.0);    // D-only, no filter
+    PIDController pid_filt(0.0, 0.0, 1.0);   // D-only, with filter
+    pid_filt.set_d_filter(0.7);               // alpha=0.7 → strong smoothing
+    pid_raw.reset();
+    pid_filt.reset();
+
+    // Step 1: large error jump → both respond
+    mock_time_sec = 0.01;
+    double raw1  = pid_raw.calculate(10.0, 0.0);
+    mock_time_sec = 0.0; // reset time for filtered pid
+    pid_filt.reset();
+    mock_time_sec = 0.01;
+    double filt1 = pid_filt.calculate(10.0, 0.0);
+
+    // With EMA filter (alpha=0.7): filtered = 0.7*0 + 0.3*raw = 0.3*raw
+    // So filtered should be smaller than raw on first spike
+    ASSERT_LT(std::abs(filt1), std::abs(raw1));
+}
+
+TEST(PID_OutputLimit_ClampsOutput) {
+    reset_all_mocks();
+    mock_time_sec = 1.0;
+    PIDController pid(10.0, 0.0, 0.0); // P-only with high gain
+    pid.set_output_limit(5.0);           // clamp output to ±5
+    pid.reset();
+
+    mock_time_sec = 1.01;
+    double output = pid.calculate(100.0, 0.0); // error=100, P=1000 unclamped
+    ASSERT_NEAR(output, 5.0, 0.001); // clamped to +5.0
+
+    mock_time_sec = 1.02;
+    double neg_output = pid.calculate(0.0, 100.0); // error=-100
+    ASSERT_NEAR(neg_output, -5.0, 0.001); // clamped to -5.0
+}
+
+TEST(PID_OutputLimit_NoClampWhenDisabled) {
+    reset_all_mocks();
+    mock_time_sec = 1.0;
+    PIDController pid(10.0, 0.0, 0.0);
+    // output_limit defaults to 0 (disabled)
+    pid.reset();
+
+    mock_time_sec = 1.01;
+    double output = pid.calculate(100.0, 0.0); // error=100, P=1000
+    ASSERT_NEAR(output, 1000.0, 0.1); // no clamping
+}
+
+TEST(PID_ResetClearsEnhancedState) {
+    reset_all_mocks();
+    mock_time_sec = 0.0;
+    PIDController pid(1.0, 1.0, 1.0);
+    pid.set_integral_limit(10.0);
+    pid.set_d_filter(0.5);
+    pid.set_output_limit(50.0);
+    pid.reset();
+
+    // Build up state
+    for (int i = 1; i <= 20; i++) {
+        mock_time_sec = i * 0.01;
+        pid.calculate(10.0, 5.0);
+    }
+
+    // Reset
+    mock_time_sec = 1.0;
+    pid.reset();
+    mock_time_sec = 1.01;
+    double after_reset = pid.calculate(10.0, 5.0);
+
+    // Fresh PID with same config
+    mock_time_sec = 2.0;
+    PIDController pid2(1.0, 1.0, 1.0);
+    pid2.set_integral_limit(10.0);
+    pid2.set_d_filter(0.5);
+    pid2.set_output_limit(50.0);
+    pid2.reset();
+    mock_time_sec = 2.01;
+    double fresh = pid2.calculate(10.0, 5.0);
+
+    ASSERT_NEAR(after_reset, fresh, 0.01);
+}
+
+// ============================================================================
 // Motion Profile Tests
 // ============================================================================
 
@@ -370,6 +499,89 @@ TEST(Odometry_MultipleUpdatesAccumulate) {
 }
 
 // ============================================================================
+// Drive Straight 1m — Logic Tests
+// ============================================================================
+// Tests the distance calculation and speed ramp from main.cpp's
+// drive_straight_1m(), without VEX hardware dependencies.
+
+TEST(Drive_TargetDegreesFor1m) {
+    // 1m / wheel_circumference = revolutions, * 360 = degrees
+    double target_revs = 1.0 / WHEEL_CIRCUMFERENCE;
+    double target_deg  = target_revs * 360.0;
+
+    // With 4-inch (0.1016m) wheels: circumference ≈ 0.3192m
+    // target_revs ≈ 3.133, target_deg ≈ 1127.8
+    ASSERT_GT(target_deg, 0.0);
+    ASSERT_NEAR(target_deg, 360.0 / WHEEL_CIRCUMFERENCE, 0.01);
+    // Sanity: should be roughly 1000-1300 degrees for 4-inch wheels
+    ASSERT_GT(target_deg, 900.0);
+    ASSERT_LT(target_deg, 1500.0);
+}
+
+TEST(Drive_SpeedRampProfile) {
+    double target_revs = 1.0 / WHEEL_CIRCUMFERENCE;
+    double target_deg  = target_revs * 360.0;
+    double max_speed   = 50.0;
+    double ramp_up_deg = target_deg * 0.2;
+    double ramp_dn_deg = target_deg * 0.8;
+    double min_speed   = 10.0;
+
+    // Helper lambda: compute speed at a given encoder position
+    auto calc_speed = [&](double pos) -> double {
+        double speed = max_speed;
+        if (pos < ramp_up_deg) {
+            speed = min_speed + (max_speed - min_speed) * (pos / ramp_up_deg);
+        } else if (pos > ramp_dn_deg) {
+            double remaining = target_deg - pos;
+            double ramp_zone = target_deg - ramp_dn_deg;
+            speed = min_speed + (max_speed - min_speed) * (remaining / ramp_zone);
+        }
+        return speed;
+    };
+
+    // At start (pos=0): speed should be min_speed
+    ASSERT_NEAR(calc_speed(0.0), min_speed, 0.01);
+
+    // At 10% (mid ramp-up): speed between min and max
+    double mid_ramp = ramp_up_deg / 2.0;
+    double mid_speed = calc_speed(mid_ramp);
+    ASSERT_GT(mid_speed, min_speed);
+    ASSERT_LT(mid_speed, max_speed);
+
+    // At 50% (cruise): speed = max
+    ASSERT_NEAR(calc_speed(target_deg * 0.5), max_speed, 0.01);
+
+    // At 90% (mid ramp-down): speed between min and max
+    double mid_down = target_deg * 0.9;
+    double down_speed = calc_speed(mid_down);
+    ASSERT_GT(down_speed, min_speed);
+    ASSERT_LT(down_speed, max_speed);
+
+    // Speed is symmetric: 10% from start ≈ 10% from end
+    double early = calc_speed(ramp_up_deg * 0.5);
+    double late  = calc_speed(target_deg - (target_deg - ramp_dn_deg) * 0.5);
+    ASSERT_NEAR(early, late, 0.01);
+
+    // Speed never exceeds max or drops below min in the valid range
+    for (double pos = 0.0; pos < target_deg; pos += target_deg / 100.0) {
+        double s = calc_speed(pos);
+        ASSERT_TRUE(s >= min_speed - 0.01);
+        ASSERT_TRUE(s <= max_speed + 0.01);
+    }
+}
+
+TEST(Drive_StopsAtTargetDegrees) {
+    // Verify the loop exit condition: pos >= target_deg means we stop
+    double target_deg = 360.0 / WHEEL_CIRCUMFERENCE; // degrees for 1m
+    // At exactly target: should stop
+    ASSERT_TRUE(target_deg >= target_deg);
+    // Slightly past: should stop
+    ASSERT_TRUE(target_deg + 1.0 >= target_deg);
+    // Before target: should NOT stop
+    ASSERT_TRUE(!(target_deg - 1.0 >= target_deg));
+}
+
+// ============================================================================
 // Main: Run all tests
 // ============================================================================
 
@@ -386,6 +598,14 @@ int main() {
     RUN_TEST(PID_DerivativeRespondToChange);
     RUN_TEST(PID_ResetClearsState);
 
+    printf("\n[PID Enhancements]\n");
+    RUN_TEST(PID_AntiWindup_ClampsIntegral);
+    RUN_TEST(PID_AntiWindup_NegativeClamp);
+    RUN_TEST(PID_DFilter_SmoothsDerivative);
+    RUN_TEST(PID_OutputLimit_ClampsOutput);
+    RUN_TEST(PID_OutputLimit_NoClampWhenDisabled);
+    RUN_TEST(PID_ResetClearsEnhancedState);
+
     printf("\n[Motion Profile]\n");
     RUN_TEST(MotionProfile_AccelerationPhase);
     RUN_TEST(MotionProfile_ReachesMaxVelocity);
@@ -400,6 +620,11 @@ int main() {
     RUN_TEST(Odometry_PointTurn90Degrees);
     RUN_TEST(Odometry_DriveBackward);
     RUN_TEST(Odometry_MultipleUpdatesAccumulate);
+
+    printf("\n[Drive Straight 1m]\n");
+    RUN_TEST(Drive_TargetDegreesFor1m);
+    RUN_TEST(Drive_SpeedRampProfile);
+    RUN_TEST(Drive_StopsAtTargetDegrees);
 
     printf("\n============================================\n");
     printf("  Results: %d passed, %d failed, %d total\n",

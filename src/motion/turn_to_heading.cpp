@@ -30,6 +30,11 @@ double turn_to_heading_pid_calculate(double error) {
 
 void turn_to_heading(double target_heading_rad) {
     turn_pid.reset();
+#ifdef ROBOT_6MOTOR
+    turn_pid.set_integral_limit(TURN_INTEGRAL_LIMIT);
+    turn_pid.set_d_filter(TURN_D_FILTER);
+    turn_pid.set_output_limit(12.0);
+#endif
 
     unsigned long settle_start = 0;  // timestamp when we first entered tolerance
     bool settling = false;
