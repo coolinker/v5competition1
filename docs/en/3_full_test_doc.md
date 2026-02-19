@@ -61,9 +61,8 @@ These run on your development computer with `make test`. No robot needed.
 | PID Controller | 6 | P/I/D terms, zero error, reset |
 | PID Enhancements | 6 | Anti-windup, D-filter, output clamp, reset |
 | Motion Profile | 5 | Accel/cruise/decel phases, bounds |
-| Odometry | 6 | Forward/backward/turn/accumulation |
-| Drive Straight | 3 | Target degrees, speed ramp, stop condition |
-| **Total** | **26** | |
+| Odometry | 7 | Forward/backward/turn/accumulation/heading |
+| **Total** | **24** | |
 
 **How to run:**
 ```bash
@@ -71,7 +70,7 @@ cd v5competition1
 make test
 ```
 
-**Pass criteria:** All 26 tests show `[ OK ]`, exit code 0.
+**Pass criteria:** All 24 tests show `[ OK ]`, exit code 0.
 
 See [Unit Test Documentation](../en/2_unit_test_doc.md) for detailed test case descriptions.
 
@@ -81,18 +80,9 @@ See [Unit Test Documentation](../en/2_unit_test_doc.md) for detailed test case d
 
 These tests verify that each piece of hardware works correctly. Run them with the robot on blocks (wheels off the ground) or on a smooth surface.
 
-> **Configuration note:** The procedures below show the 2-motor (ROBOT_2MOTOR) version first. Where the 6-motor (ROBOT_6MOTOR) configuration differs, a 6-motor variant is provided. Ensure you have the correct `#define` active in `config.h` before testing.
-
 ### Test 2.1: Motor Direction Check
 
-**Procedure (2-motor):**
-1. Lift the robot so wheels are off the ground
-2. In `usercontrol()`, push the left joystick forward
-3. **Observe:** Left wheel spins forward
-4. Push the right joystick forward
-5. **Observe:** Right wheel spins forward
-
-**Procedure (6-motor):**
+**Procedure:**
 1. Lift the robot so all 6 wheels are off the ground
 2. In `usercontrol()`, push the left joystick forward
 3. **Observe:** All 3 left wheels (front, middle, rear) spin forward
@@ -100,11 +90,9 @@ These tests verify that each piece of hardware works correctly. Run them with th
 5. **Observe:** All 3 right wheels (front, middle, rear) spin forward
 6. **Additionally:** Verify all 6 wheels spin at approximately the same speed (no stalled motors)
 
-**If wrong:** Check motor constructor reversed flags in `main.cpp`. For the 6-motor config, left-side motors should have `reversed=true`, right-side motors `reversed=false`. Also verify all 6 motor ports match `config.h`.
+**If wrong:** Check motor constructor reversed flags in `main.cpp`. Left-side motors should have `reversed=true`, right-side motors `reversed=false`. Also verify all 6 motor ports match `config.h`.
 
-**Pass criteria:**
-- **2-motor:** Both wheels spin forward when joysticks are pushed forward.
-- **6-motor:** All 6 wheels spin forward. Left-side and right-side groups move in unison.
+**Pass criteria:** All 6 wheels spin forward when joysticks are pushed forward. Left-side and right-side groups move in unison.
 
 ---
 
@@ -123,14 +111,13 @@ These tests verify that each piece of hardware works correctly. Run them with th
 4. Rotate backward
 5. **Observe:** Encoder counts down
 
-**Pass criteria by configuration:**
+**Pass criteria:**
 
-| Config | Cartridge | Expected ticks/rev | Encoder source |
-|--------|-----------|-------------------|----------------|
-| ROBOT_2MOTOR | Green (18:1) | 360 ±5 | Each drive motor directly |
-| ROBOT_6MOTOR | Blue (6:1) | 300 ±5 | Middle motor (`ENCODER_MOTOR_INDEX=1`) |
+| Cartridge | Expected ticks/rev | Encoder source |
+|-----------|-------------------|----------------|
+| Blue (6:1) | 300 ±5 | Tracking wheel rotation sensors (ports 8-9) |
 
-**6-motor note:** The encoder reading comes from a single motor per side (the middle motor, index 1). Make sure the middle motor's wheel has good ground contact when testing odometry. If encoder values seem off, verify `ENCODER_MOTOR_INDEX` and `TICKS_PER_REV` in `config.h`.
+**Note:** Odometry uses perpendicular tracking wheels (forward + lateral), not drive motor encoders. Verify that the tracking wheel rotation sensors on ports 8-9 count correctly when each wheel is rotated.
 
 - Direction matches: forward = positive
 
@@ -242,14 +229,13 @@ These test combinations of modules working together. Robot must move.
 
 ---
 
-### Test 3.5: Boomerang Curved Approach (6-motor only)
+### Test 3.5: Boomerang Curved Approach
 
 **Procedure:**
-1. Select `ROBOT_6MOTOR` in `config.h`
-2. Place robot facing +X direction
-3. `set_pose({0, 0, 0})`
-4. Run `drive_to_pose({1.0, 0.5, M_PI/2})` — target is (1.0, 0.5) facing +Y
-5. Observe the path: robot should curve smoothly to the target
+1. Place robot facing +X direction
+2. `set_pose({0, 0, 0})`
+3. Run `drive_to_pose({1.0, 0.5, M_PI/2})` — target is (1.0, 0.5) facing +Y
+4. Observe the path: robot should curve smoothly to the target
 
 **Pass criteria:**
 - Robot follows a smooth arc (not a sharp turn-then-drive)
@@ -262,7 +248,7 @@ These test combinations of modules working together. Robot must move.
 - Path too tight/oscillating: Increase `BOOMERANG_LEAD`
 - Heading off at arrival: Check angular PID gains
 
-### Test 3.6: Reverse Drive (6-motor only)
+### Test 3.6: Reverse Drive
 
 **Procedure:**
 1. `set_pose({0, 0, 0})`
@@ -333,11 +319,11 @@ Run this checklist before every competition event:
 
 ### Pre-Competition Checklist
 
-- [ ] **Configuration:** Correct robot config active in `config.h` (`ROBOT_2MOTOR` or `ROBOT_6MOTOR`)
+- [ ] **Configuration:** Correct port assignments in `config.h`
 - [ ] **Battery:** Fully charged (> 95%)
 - [ ] **Firmware:** V5 Brain firmware up to date
 - [ ] **Code compiled:** `make` builds without errors
-- [ ] **Unit tests pass:** `make test` → 26/26
+- [ ] **Unit tests pass:** `make test` → 24/24
 - [ ] **IMU calibration:** Shows "Ready." on screen within 3 seconds
 - [ ] **Motor check:** All motors spin correct direction (Test 2.1)
 - [ ] **Encoder check:** Encoders count correctly (Test 2.2) — verify TICKS_PER_REV matches cartridge
@@ -345,7 +331,7 @@ Run this checklist before every competition event:
 - [ ] **Repeatability:** 3 consecutive successful autonomous runs (Test 4.2)
 - [ ] **Timeout works:** Robot stops if held (Test 4.3)
 - [ ] **Driver control:** Tank drive works smoothly
-- [ ] **No loose wires:** All connections secure (2 cables for 2-motor, 6 cables for 6-motor)
+- [ ] **No loose wires:** All connections secure (6 motor cables + 2 tracking wheel cables + IMU + Vision = 10 cables total)
 
 ### Match Simulation Procedure
 
@@ -373,12 +359,11 @@ PID tuning is the most important testing activity. Bad PID gains = bad robot per
 4. **Add Kd** (start at Kp/10). Increase until oscillation stops
 5. **Add Ki only if needed** (start at Kp/100). Only if robot consistently stops short
 
-**Recommended starting gains by configuration:**
+**Recommended starting gains:**
 
-| Config | TURN_KP | TURN_KI | TURN_KD | Notes |
-|--------|---------|---------|---------|-------|
-| ROBOT_2MOTOR | 2.0 | 0.0 | 0.1 | Conservative, good for learning |
-| ROBOT_6MOTOR | 3.5 | 0.02 | 0.25 | + anti-windup (3.0), D-filter (0.5), output clamp (12V) |
+| TURN_KP | TURN_KI | TURN_KD | Anti-windup | D-filter | Output clamp |
+|---------|---------|---------|-------------|----------|--------------|
+| 3.5 | 0.02 | 0.25 | 3.0 | 0.5 | 12V |
 
 | Symptom | What to change |
 |---------|---------------|
@@ -392,12 +377,11 @@ PID tuning is the most important testing activity. Bad PID gains = bad robot per
 
 Same process, but test with `drive_to_pose({1.0, 0, 0})`.
 
-**Recommended starting gains by configuration:**
+**Recommended starting gains:**
 
-| Config | DRIVE_KP | DRIVE_KI | DRIVE_KD | MAX_VELOCITY | MAX_ACCEL |
-|--------|----------|----------|----------|-------------|----------|
-| ROBOT_2MOTOR | 5.0 | 0.0 | 0.3 | 0.8 m/s | 1.5 m/s² |
-| ROBOT_6MOTOR | 8.0 | 0.05 | 0.5 | 1.2 m/s | 3.0 m/s² |
+| DRIVE_KP | DRIVE_KI | DRIVE_KD | MAX_VELOCITY | MAX_ACCEL |
+|----------|----------|----------|-------------|----------|
+| 8.0 | 0.05 | 0.5 | 1.2 m/s | 3.0 m/s² |
 
 #### Tuning tips:
 
@@ -414,10 +398,10 @@ Use this table to track test progress. Mark ✅ when passing, ❌ when failing, 
 
 ```
 === Level 1: Host-Side Unit Tests ===
-⬜ make test → 26/26 pass
+⬜ make test → 24/24 pass
 
 === Level 2: Component Tests ===
-⬜ 2.1  Motor direction (all motors for your config)
+⬜ 2.1  Motor direction (all 6 motors)
 ⬜ 2.2  Encoder accuracy (verify TICKS_PER_REV matches cartridge)
 ⬜ 2.3  IMU calibration & heading
 
@@ -426,8 +410,8 @@ Use this table to track test progress. Mark ✅ when passing, ❌ when failing, 
 ⬜ 3.2  Odometry turn accuracy
 ⬜ 3.3  Turn-to-heading accuracy
 ⬜ 3.4  Drive-to-pose accuracy
-⬜ 3.5  Boomerang curved approach (6M only)
-⬜ 3.6  Reverse drive (6M only)
+⬜ 3.5  Boomerang curved approach
+⬜ 3.6  Reverse drive
 
 === Level 4: System Tests ===
 ⬜ 4.1  L-path autonomous
@@ -438,10 +422,10 @@ Use this table to track test progress. Mark ✅ when passing, ❌ when failing, 
 ⬜ Full pre-competition checklist
 ⬜ Match simulation (3 runs)
 
-=== Configuration-Specific ===
-⬜ Correct #define active in config.h
-⬜ Port assignments match physical wiring
-⬜ PID gains appropriate for config (see tuning guide)
+=== Hardware-Specific ===
+⬜ Port assignments match physical wiring (motors 1-6, tracking wheels 8-9, IMU 10, Vision 12)
+⬜ Tracking wheels making good ground contact
+⬜ PID gains appropriate for drivetrain (see tuning guide)
 ```
 
 ---
@@ -451,7 +435,7 @@ Use this table to track test progress. Mark ✅ when passing, ❌ when failing, 
 | # | Symptom | Likely Cause | Fix |
 |---|---------|-------------|-----|
 | 1 | Robot drives in a curve instead of straight | Left and right wheels have different diameters or friction | Check wheels, tune HEADING_CORRECTION_KP |
-| 2 | Odometry position drifts over time | Wheel slippage, inaccurate WHEEL_DIAMETER | Measure wheel diameter precisely, consider tracking wheels |
+| 2 | Odometry position drifts over time | Wheel slippage, inaccurate TRACKING_WHEEL_DIAMETER | Measure wheel diameter precisely, check tracking wheel ground contact |
 | 3 | Robot oscillates (shakes) during turn | Kp too high or Kd too low | Reduce Kp, increase Kd. 6M: check TURN_D_FILTER |
 | 4 | Robot never reaches target heading | Kp too low, or friction too high | Increase Kp. 6M: check TURN_INTEGRAL_LIMIT |
 | 5 | Autonomous overshoots target position | MAX_VELOCITY too high, motion profile decel too short | Reduce MAX_VELOCITY or increase MAX_ACCELERATION |
@@ -460,9 +444,8 @@ Use this table to track test progress. Mark ✅ when passing, ❌ when failing, 
 | 8 | Different behavior on different surfaces | Friction affects wheel slip and PID response | Re-tune PID gains for competition surface |
 | 9 | `make test` fails but robot works fine | Tests check math, not hardware behavior | Fix the test — math should always be correct |
 | 10 | Robot works but auton is inconsistent | Battery level variation, wheels wearing down | Charge battery, check wheels, tune at worst-case |
-| 11 | Wrong config active | `#define ROBOT_2MOTOR` vs `ROBOT_6MOTOR` mismatch | Check `config.h` — only one should be uncommented |
-| 12 | 6-motor: one side weaker | One motor cable not fully seated | Re-seat all 6 cables; check each motor individually |
-| 13 | 6-motor: encoder jumps | Middle motor wheel not contacting ground | Ensure encoder motor (index 1) has good traction |
+| 11 | One side weaker | One motor cable not fully seated | Re-seat all 6 cables; check each motor individually |
+| 12 | Encoder jumps | Tracking wheel not contacting ground | Ensure tracking wheel rotation sensors have good ground contact |
 
 ---
 
@@ -474,12 +457,11 @@ Use this table to track test progress. Mark ✅ when passing, ❌ when failing, 
 ╠══════════════════════════════════════════════╣
 ║                                              ║
 ║  Run unit tests:     make test               ║
-║  Expected pass:      26/26                   ║
+║  Expected pass:      24/24                   ║
 ║  Build for robot:    make                    ║
 ║                                              ║
 ║  Config file:        include/config.h        ║
 ║  Test file:          test/host_tests.cpp     ║
-║  Active config:      Check #define at top!   ║
 ║                                              ║
 ║  PID Tuning Order:   P → D → I              ║
 ║  Start with:         Kp=1, Ki=0, Kd=0       ║
@@ -489,15 +471,16 @@ Use this table to track test progress. Mark ✅ when passing, ❌ when failing, 
 ║    Wheel track:      Center-to-center        ║
 ║    Ticks/rev:        Rotate 1 full turn      ║
 ║                                              ║
-║  Config-specific values:                     ║
-║               2-MOTOR       6-MOTOR          ║
-║  Cartridge:   Green(18:1)   Blue(6:1)        ║
-║  Ticks/rev:   360           300              ║
-║  Motors:      2             6                ║
-║  Wheels:      4" (0.1016m)  3.25" (0.083m)  ║
-║  Max vel:     0.8 m/s       1.2 m/s          ║
-║  TURN_TIMEOUT:  2000 ms     1500 ms          ║
-║  DRIVE_TIMEOUT: 5000 ms     4000 ms          ║
+║  Hardware config:                            ║
+║    Cartridge:   Blue (6:1)                   ║
+║    Ticks/rev:   300                          ║
+║    Motors:      6 (ports 1-6)                ║
+║    Tracking:    2 wheels (ports 8-9)         ║
+║    IMU:         port 10                      ║
+║    Vision:      port 12                      ║
+║    Max vel:     1.2 m/s                      ║
+║    TURN_TIMEOUT:  1500 ms                    ║
+║    DRIVE_TIMEOUT: 4000 ms                    ║
 ║                                              ║
 ╚══════════════════════════════════════════════╝
 ```

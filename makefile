@@ -33,7 +33,7 @@ include vex/mkrules.mk
 # Host-side unit tests (runs on your Mac/Linux, no VEX hardware needed)
 # ============================================================================
 HOST_CXX = g++
-HOST_CXX_FLAGS = -std=c++17 -Wall -Wextra -g -I include -I src
+HOST_CXX_FLAGS = -std=c++17 -Wall -Wextra -g -I test/mocks -I include -I src
 HOST_TEST_SRC = test/host_tests.cpp
 HOST_TEST_BIN = build/run_tests
 

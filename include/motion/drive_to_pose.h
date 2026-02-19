@@ -1,28 +1,26 @@
 #pragma once
 // ============================================================================
-//  motion/drive_to_pose.h — Drive to an (x, y) position on the field
+//  motion/drive_to_pose.h — 驶向目标位姿（Boomerang 弧线控制器）
 // ============================================================================
-//  6-motor (Boomerang controller):
-//    Drives a smooth curved path toward (x, y) arriving at heading θ.
-//    A "carrot" point offset from the target guides the curve.
-//    Supports reverse driving.
 //
-//  2-motor (turn-then-drive, unchanged):
-//    Phase 1: Turn in place toward the target
-//    Phase 2: Drive forward with profiled velocity + heading correction
+//  【这个文件干什么？】
+//    让机器人沿着一条平滑的弧线开到目标点 (x, y)，
+//    并且到达时朝向指定的角度 θ。
 //
-//  FUTURE:
-//    • Pure-pursuit for multi-waypoint path following
+//  【为什么不直接走直线？】
+//    如果先直线到(x,y)再原地转到θ，路径就像一个 L 形——又慢又笨拙。
+//    Boomerang 控制器让机器人走弧线，像扔回力镖一样优雅地到达目标，
+//    到达时已经是正确的朝向了！
+//
+//  【也支持倒车】
+//    设置 reverse=true 就可以倒着开过去。
+//
 // ============================================================================
 #include "localization/odometry.h"
 
-/// Drive to the given (x, y, θ) pose on the field.
+/// 驶向指定的 (x, y, θ) 位姿，走平滑弧线路径
 ///
-/// 6-motor (Boomerang): drives a smooth curved path, arrives at the target
-/// with the desired final heading θ.  Set reverse=true to drive backward.
-///
-/// 2-motor (turn-then-drive): turns to face target, drives straight.
-/// theta is used for approach heading; final heading is NOT enforced.
-///
-/// Blocks until settled or timed out.
+/// 这个函数会"卡住"程序直到到达目标或超时。
+/// @param target_pose  目标位姿（x=前方米, y=侧方米, theta=目标朝向弧度）
+/// @param reverse      true=倒着开，false=正着开（默认）
 void drive_to_pose(const Pose& target_pose, bool reverse = false);

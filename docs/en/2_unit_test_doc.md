@@ -53,8 +53,6 @@ VEX robots run on ARM processors, but tests run on your **laptop/desktop** (x86/
 
 **Key insight:** The algorithm code (PID, MotionProfile, Odometry) is the same in both environments. Only the HAL changes — tests use **mock (fake) functions**, the robot uses **real hardware functions**.
 
-> **Multi-config note:** Unit tests are completely **configuration-independent**. Whether you use `ROBOT_2MOTOR` or `ROBOT_6MOTOR`, the same 23 tests validate the same PID, MotionProfile, and Odometry math. The tests use mock HAL functions that bypass all config-specific motor code. This demonstrates the architecture's reusability — algorithms are tested once and work for any drivetrain configuration.
-
 ### File Structure
 
 All tests live in a single file: `test/host_tests.cpp`
@@ -67,7 +65,7 @@ test/host_tests.cpp
 ├── PID Controller Tests (6 tests)
 ├── PID Enhancement Tests (6 tests) — anti-windup, D-filter, output clamp
 ├── Motion Profile Tests (5 tests)
-├── Odometry Tests (6 tests)
+├── Odometry Tests (7 tests)
 └── main() — runs all tests
 ```
 
@@ -101,11 +99,8 @@ make test
 [Odometry]
   ... (more tests)
 
-[Drive Straight 1m]
-  ... (3 tests)
-
 ============================================
-  Results: 26 passed, 0 failed, 26 total
+  Results: 24 passed, 0 failed, 24 total
 ============================================
   ALL TESTS PASSED
 ```
@@ -276,7 +271,7 @@ Before each test, call `reset_all_mocks()` to start fresh.
 | **What it tests** | Default output_limit=0 means no clamping |
 | **Setup** | Kp=10.0, error=100, no set_output_limit() call |
 | **Expected** | Output = 1000.0 (unclamped) |
-| **Why it matters** | Ensures backward compatibility — 2-motor config is unaffected |
+| **Why it matters** | Ensures backward compatibility — default behavior is unclamped |
 
 ### Test 12: Reset Clears Enhanced State
 
@@ -449,13 +444,12 @@ Examples:
 | PID Controller | 6 | P, I, D terms individually, zero error, reset |
 | PID Enhancements | 6 | Anti-windup (±), D-filter, output clamp (on/off), reset |
 | Motion Profile | 5 | Accel, cruise, decel, zero, bounds |
-| Odometry | 6 | Init, set, forward, turn, backward, accumulation |
-| Drive Straight 1m | 3 | Target degrees, speed ramp, stop condition |
-| **Total** | **26** | **Core algorithms + enhancements fully covered** |
+| Odometry | 7 | Init, set, forward, turn, backward, accumulation, heading |
+| **Total** | **24** | **Core algorithms + enhancements fully covered** |
 
 **Not tested (by design):**
 - `turn_to_heading` / `drive_to_pose` — These are integration-level (depend on control loop timing). Tested on-robot.
 - Boomerang controller — Integration-level; verified through on-robot system tests.
-- HAL functions — These just wrap VEX API calls; nothing to unit test. The 6-motor motor array logic is verified through on-robot component tests (see [Full Test Document](3_full_test_doc.md)).
-- `main.cpp` — Competition callbacks and motor declarations are config-specific; tested by running the robot.
-- Config selection (`#ifdef ROBOT_2MOTOR` / `ROBOT_6MOTOR`) — Compile-time guards; tested implicitly by building the project.
+- HAL functions — These just wrap VEX API calls; nothing to unit test. Motor array and tracking wheel logic is verified through on-robot component tests (see [Full Test Document](3_full_test_doc.md)).
+- `main.cpp` — Competition callbacks and motor declarations are hardware-specific; tested by running the robot.
+- Vision localizer — Requires real AprilTag detections; tested through on-robot integration tests.

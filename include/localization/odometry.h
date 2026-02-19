@@ -1,35 +1,59 @@
 #pragma once
 // ============================================================================
-//  localization/odometry.h — Robot position tracking
+//  localization/odometry.h — 里程计（让机器人知道"我在哪"）
 // ============================================================================
-//  Odometry estimates the robot's (x, y, θ) position on the field by
-//  integrating wheel encoder deltas and fusing with the IMU heading.
 //
-//  Coordinate system:
-//    • x = forward (meters)
-//    • y = left    (meters)
-//    • θ = counter-clockwise from +x axis (radians)
+//  【什么是里程计？】
+//    想象你闭着眼睛在房间里走路：
+//    每走一步就在脑子里记住"向前走了 1 米"、"向右转了 30°"……
+//    这样虽然看不见，但大概能知道自己在哪。这就是里程计！
 //
-//  Call odometry_update() every 10ms in your main loop.
+//    里程计的输入是：
+//    • 纵向追踪轮告诉你"前后走了多远"
+//    • 横向追踪轮告诉你"左右滑了多远"
+//    • IMU 告诉你"转了多少度"
 //
-//  FUTURE:
-//    • Add tracking wheels (passive encoders) for higher accuracy
-//    • Add Kalman filter for multi-sensor fusion
-//    • Add field-relative coordinate transforms
+//    里程计的输出是：
+//    • 位姿 (x, y, θ) —— 你在场地上的坐标和朝向
+//
+//  【坐标系】
+//    • x = 前方（米）
+//    • y = 左方（米）
+//    • θ = 角度（弧度，逆时针为正）
+//    原点通常设在自治阶段的起始位置
+//
+//  【怎么用？】
+//    在 pre_auton() 里调用 odometry_start_task() 启动后台任务。
+//    后台线程以 100Hz（每秒 100 次）自动更新位姿。
+//    运动控制器通过 get_pose() 读取最新位姿——不需要手动调用更新！
+//
 // ============================================================================
 
-/// Robot pose: position + heading on the field
+/// 机器人位姿：在场地上的位置 + 朝向
 struct Pose {
-    double x;      ///< forward position (meters)
-    double y;      ///< lateral position (meters)
-    double theta;  ///< heading (radians, CCW positive)
+    double x;      ///< 前方位置（米）
+    double y;      ///< 侧方位置（米）
+    double theta;  ///< 航向角（弧度，逆时针为正）
 };
 
-/// Call every loop iteration (~10ms) to update the pose estimate.
+/// 启动里程计后台任务（100 Hz）
+/// 在 pre_auton() 中 IMU 校准完成后调用一次
+void odometry_start_task();
+
+/// 停止里程计后台任务
+void odometry_stop_task();
+
+/// 执行一次里程计更新（由后台任务自动调用，也可手动调用用于测试）
 void odometry_update();
 
-/// Get the current estimated pose.
+/// 获取当前位姿（线程安全——有锁保护）
 Pose get_pose();
 
-/// Manually set the pose (e.g. at the start of autonomous).
+/// 手动设置位姿（比如在自治开始时设定起始位置）
+/// 会同时重置编码器和 IMU
 void set_pose(const Pose& new_pose);
+
+/// 微调位姿（不重置编码器/IMU）
+/// 用于视觉校正——只是轻轻"推一下"位置，不打断编码器的正常计数
+/// ⚠ 不要用这个函数来手动设定起始位姿！用 set_pose() 代替
+void set_pose_no_reset(const Pose& new_pose);

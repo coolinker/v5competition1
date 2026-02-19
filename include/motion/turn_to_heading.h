@@ -1,19 +1,26 @@
 #pragma once
 // ============================================================================
-//  motion/turn_to_heading.h — Point-turn to an absolute heading
+//  motion/turn_to_heading.h — 原地转弯（转到指定方向）
 // ============================================================================
-//  Rotates the robot in place to face a given heading using PID control.
-//  Uses settle-time and timeout to decide when the turn is "done".
 //
-//  FUTURE:
-//    • Motion-profiled angular velocity (S-curve)
-//    • Cascaded velocity → voltage PID
+//  【这个文件干什么？】
+//    让机器人原地旋转到指定的方向（绝对航向角）。
+//    使用 PID 控制左右电机反方向旋转来实现原地转弯。
+//
+//  【例子】
+//    turn_to_heading(M_PI / 2);  // 转到 90°（面朝左方）
+//    turn_to_heading(0);          // 转到 0°（面朝前方）
+//    turn_to_heading(M_PI);       // 转到 180°（面朝后方）
+//
+//  【什么时候算"转好了"？】
+//    角度误差 < TURN_SETTLE_RAD 持续 TURN_SETTLE_TIME_MS 毫秒 → 完成
+//    或者超过 TURN_TIMEOUT_MS → 超时退出（防止卡死）
+//
 // ============================================================================
 
-/// Turn the robot in place to face `target_heading_rad`.
-/// Blocks until settled or timed out.
+/// 原地转到指定航向（弧度），阻塞直到完成或超时
 void turn_to_heading(double target_heading_rad);
 
-/// Compute angular correction for a given heading error.
-/// Exposed so drive_to_pose() can reuse the turn PID for heading correction.
+/// 计算给定角度误差下的 PID 修正输出
+/// 暴露出来是为了让 drive_to_pose() 也能复用同一个转弯 PID
 double turn_to_heading_pid_calculate(double error);

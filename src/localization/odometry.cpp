@@ -1,91 +1,130 @@
 // ============================================================================
-//  localization/odometry.cpp — Differential drive odometry with IMU fusion
+//  localization/odometry.cpp — 垂直双轮里程计 + IMU 角度
 // ============================================================================
 //
-//  Math overview (discrete approximation):
+//  【算法原理——垂直双轮方案】
 //
-//    Δs_L = (ticks_L / TICKS_PER_REV) × π × D   (left wheel distance)
-//    Δs_R = (ticks_R / TICKS_PER_REV) × π × D   (right wheel distance)
-//    Δs   = (Δs_L + Δs_R) / 2                    (center distance)
-//    Δθ   = (Δs_R − Δs_L) / W                    (heading change)
+//    与平行双轮不同，垂直双轮可以同时测量前后和左右两个方向的位移：
 //
-//    We FUSE θ with IMU for drift correction:
-//    θ_fused = α × θ_imu + (1−α) × θ_enc
+//    第 1 步：读取传感器
+//      • 纵向轮 → 这次前后走了多远（Δforward）
+//      • 横向轮 → 这次左右滑了多远（Δlateral）
+//      • IMU    → 这次转了多少角度（Δθ）
 //
-//    x += Δs × cos(θ + Δθ/2)     (midpoint approximation)
-//    y += Δs × sin(θ + Δθ/2)
+//    第 2 步：补偿旋转引起的假位移
+//      当机器人旋转时，偏离旋转中心的轮子会画弧线。
+//      这段弧线不是真正的前后/左右平移，需要减掉：
+//        Δforward_corrected = Δforward - FORWARD_WHEEL_OFFSET × Δθ
+//        Δlateral_corrected = Δlateral - LATERAL_WHEEL_OFFSET × Δθ
+//
+//    第 3 步：转换到全局坐标
+//      用中点近似法，把机器人坐标系的位移转到场地坐标系：
+//        x += Δforward × cos(θ+Δθ/2) - Δlateral × sin(θ+Δθ/2)
+//        y += Δforward × sin(θ+Δθ/2) + Δlateral × cos(θ+Δθ/2)
+//        θ += Δθ
+//
+//    以 100Hz（每秒 100 次）在后台线程中不断重复以上 3 步。
 //
 // ============================================================================
 #include "localization/odometry.h"
 #include "config.h"
 #include "hal/motors.h"
 #include "hal/imu.h"
+#include "hal/hal_log.h"
+#include "hal/tracking_wheels.h"
+#include "vex.h"
 #include <cmath>
 
-// ── Internal state ──────────────────────────────────────────────────────────
+// ---- 线程安全的位姿变量 ----
+static vex::mutex pose_mutex;
 static Pose current_pose = {0.0, 0.0, 0.0};
-static double prev_left_ticks  = 0.0;
-static double prev_right_ticks = 0.0;
-#ifdef ROBOT_6MOTOR
-static double prev_imu_rotation = 0.0;
-#endif
 
+// ---- 上一次的传感器读数（用于计算增量）----
+static double prev_forward_dist  = 0.0;   // 上一次纵向轮累计距离
+static double prev_lateral_dist  = 0.0;   // 上一次横向轮累计距离
+static double prev_imu_rotation  = 0.0;   // 上一次 IMU 累计旋转量
+
+// ---- 后台任务 ----
+static vex::task* odom_task_ptr = nullptr;
+
+static int odometry_task_fn() {
+    while (true) {
+        odometry_update();
+        vex::task::sleep(LOOP_INTERVAL_MS);
+    }
+    return 0;
+}
+
+void odometry_start_task() {
+    if (odom_task_ptr == nullptr) {
+        odom_task_ptr = new vex::task(odometry_task_fn);
+        hal_log("Odometry task started (100 Hz, perpendicular tracking wheels)");
+    }
+}
+
+void odometry_stop_task() {
+    if (odom_task_ptr != nullptr) {
+        odom_task_ptr->stop();
+        delete odom_task_ptr;
+        odom_task_ptr = nullptr;
+        hal_log("Odometry task stopped");
+    }
+}
+
+// ---- 核心：一次里程计更新 ----
 void odometry_update() {
-    // 1. Read current encoder positions
-    double left_ticks  = get_left_encoder_ticks();
-    double right_ticks = get_right_encoder_ticks();
+    // 第 1 步：读取传感器当前累计值，然后算出增量
+    double fwd_dist = tracking_get_forward_distance_m();
+    double lat_dist = tracking_get_lateral_distance_m();
+    double d_forward = fwd_dist - prev_forward_dist;   // 纵向轮这一步走了多远
+    double d_lateral = lat_dist - prev_lateral_dist;    // 横向轮这一步滑了多远
+    prev_forward_dist = fwd_dist;
+    prev_lateral_dist = lat_dist;
 
-    // 2. Compute delta ticks since last update
-    double dL = left_ticks  - prev_left_ticks;
-    double dR = right_ticks - prev_right_ticks;
-
-    // 3. Convert ticks → meters
-    double dist_L = (dL / TICKS_PER_REV) * WHEEL_CIRCUMFERENCE;
-    double dist_R = (dR / TICKS_PER_REV) * WHEEL_CIRCUMFERENCE;
-
-    // 4. Center displacement and encoder heading change
-    double ds         = (dist_L + dist_R) / 2.0;
-    double dtheta_enc = (dist_R - dist_L) / WHEEL_TRACK;
-
-    // 5. Fuse heading with IMU
-#ifdef ROBOT_6MOTOR
-    // Competition: fuse DELTAS to avoid heading() wrap-around at 0°/360°
+    // 从 IMU 读取旋转角度增量
     double imu_rotation = get_imu_rotation_rad();
-    double dtheta_imu   = imu_rotation - prev_imu_rotation;
-    prev_imu_rotation   = imu_rotation;
-    double dtheta = IMU_FUSION_ALPHA * dtheta_imu
-                  + (1.0 - IMU_FUSION_ALPHA) * dtheta_enc;
-#else
-    // Entry-level: simple absolute fusion (kept for 2-motor prototype)
-    double theta_imu = get_imu_heading_rad();
-    double theta_enc = current_pose.theta + dtheta_enc;
-    double theta_fused = IMU_FUSION_ALPHA * theta_imu
-                       + (1.0 - IMU_FUSION_ALPHA) * theta_enc;
-    double dtheta = theta_fused - current_pose.theta;
-#endif
+    double dtheta = imu_rotation - prev_imu_rotation;
+    prev_imu_rotation = imu_rotation;
 
-    // 6. Update pose (midpoint approximation for curved paths)
+    // 第 2 步：补偿旋转引起的假位移
+    //   当机器人转动 Δθ 时，偏移旋转中心的轮子会画弧线，
+    //   弧长 = 偏移量 × Δθ，这不是真正的平移，需要减掉。
+    double d_fwd_corrected = d_forward - FORWARD_WHEEL_OFFSET * dtheta;
+    double d_lat_corrected = d_lateral - LATERAL_WHEEL_OFFSET * dtheta;
+
+    // 第 3 步：从机器人坐标系转换到场地全局坐标系
+    pose_mutex.lock();
     double mid_theta = current_pose.theta + dtheta / 2.0;
-    current_pose.x     += ds * cos(mid_theta);
-    current_pose.y     += ds * sin(mid_theta);
+    //   纵向位移沿机器人前方，横向位移沿机器人右方
+    //   注意：场地坐标系 y 轴朝左，所以横向向右为负 y
+    current_pose.x     += d_fwd_corrected * cos(mid_theta) - d_lat_corrected * sin(mid_theta);
+    current_pose.y     += d_fwd_corrected * sin(mid_theta) + d_lat_corrected * cos(mid_theta);
     current_pose.theta += dtheta;
-
-    // 7. Save for next iteration
-    prev_left_ticks  = left_ticks;
-    prev_right_ticks = right_ticks;
+    pose_mutex.unlock();
 }
 
 Pose get_pose() {
-    return current_pose;
+    pose_mutex.lock();
+    Pose copy = current_pose;
+    pose_mutex.unlock();
+    return copy;
 }
 
 void set_pose(const Pose& new_pose) {
-    current_pose = new_pose;
+    pose_mutex.lock();
+    current_pose       = new_pose;
+    prev_forward_dist  = 0;
+    prev_lateral_dist  = 0;
+    prev_imu_rotation  = 0.0;
+    pose_mutex.unlock();
+
     reset_encoders();
     reset_imu();
-    prev_left_ticks  = 0;
-    prev_right_ticks = 0;
-#ifdef ROBOT_6MOTOR
-    prev_imu_rotation = 0.0;
-#endif
+    tracking_wheels_reset();
+}
+
+void set_pose_no_reset(const Pose& new_pose) {
+    pose_mutex.lock();
+    current_pose = new_pose;
+    pose_mutex.unlock();
 }

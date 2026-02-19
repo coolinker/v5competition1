@@ -1,19 +1,32 @@
 #pragma once
 // ============================================================================
-//  hal/time.h — Hardware abstraction for timing
+//  hal/time.h — 时间工具（给程序提供"手表"和"闹钟"）
 // ============================================================================
-//  Provides a clean interface for time measurement and delays.
-//  In host-side tests, these are replaced by mock implementations.
+//
+//  【这个文件干什么？】
+//    提供三个功能：
+//    1. "现在几点？" —— 告诉你程序开机到现在过了多少秒/毫秒
+//    2. "等一会儿" —— 让程序休眠指定毫秒
+//
+//  【为什么要单独写这几个函数？】
+//    在真实机器人上用 VEX 的计时器，在电脑上的单元测试里用假的计时器。
+//    这样同一套代码两边都能跑（这叫"解耦"——把代码和硬件分开）。
+//
+//  【什么是毫秒？】
+//    1 秒 = 1000 毫秒。10 毫秒就是 1/100 秒——非常短！
+//
 // ============================================================================
-
 #include "hal/hal_log.h"
 
-/// Get elapsed time since program start, in seconds.
+/// 获取程序开机到现在经过的时间（单位：秒，带小数）
+/// 例如返回 3.456 表示开机已经 3.456 秒了
 double get_time_sec();
 
-/// Get elapsed time since program start, in milliseconds.
+/// 获取程序开机到现在经过的时间（单位：毫秒，整数）
+/// 例如返回 3456 表示开机已经 3456 毫秒了
 unsigned long get_time_ms();
 
-/// Sleep for the given number of milliseconds.
-/// Yields CPU to other tasks (important on V5's RTOS).
+/// 让程序休眠指定毫秒（休眠期间让出 CPU 给其他任务）
+/// 在 VEX V5 的实时系统里，这很重要——
+/// 如果不休眠就会霸占 CPU，导致其他后台任务卡住
 void wait_ms(int ms);

@@ -1,23 +1,31 @@
 // ============================================================================
-//  hal/time.cpp — Timing utilities
+//  hal/time.cpp — 时间工具的实现
+// ============================================================================
+//
+//  这三个函数很简单：把 VEX SDK 的底层时间调用包装一下。
+//  包装的目的是"解耦"——在电脑上跑单元测试时，可以用假的时间
+//  替换掉真实的 VEX 计时器，这样测试就不依赖真实硬件了。
+//
 // ============================================================================
 #include "hal/time.h"
 #include "vex.h"
 #include "hal/hal_log.h"
 
+// VEX 的 timer::system() 返回开机到现在的毫秒数
+// 除以 1000.0 就变成秒（带小数）
 double get_time_sec() {
-    double t = vex::timer::system() / 1000.0;
-    hal_log("Get time (sec): " + to_str(t));
-    return t;
+    return vex::timer::system() / 1000.0;
 }
 
+// 直接返回毫秒数（整数）
 unsigned long get_time_ms() {
-    unsigned long t = (unsigned long)vex::timer::system();
-    hal_log("Get time (ms): " + to_str(t));
-    return t;
+    return (unsigned long)vex::timer::system();
 }
 
+// 让当前任务休眠 ms 毫秒
+// VEX V5 是一个实时操作系统 (RTOS)，可以同时跑多个任务。
+// sleep 会暂停当前任务，把 CPU 让给其他任务（比如里程计后台线程）。
+// 如果不 sleep，当前任务会一直占着 CPU，其他任务就卡住了！
 void wait_ms(int ms) {
-    hal_log("Wait ms: " + to_str(ms));
     vex::task::sleep(ms);
 }

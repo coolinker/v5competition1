@@ -1,39 +1,46 @@
 #pragma once
 // ============================================================================
-//  control/motion_profile.h — Trapezoidal velocity profiler
+//  control/motion_profile.h — 梯形速度规划器（让机器人"平稳起步、匀速行驶、缓慢刹车"）
 // ============================================================================
-//  Generates a target velocity that ramps up, cruises, and ramps down:
 //
-//    velocity
-//    ▲
-//    │    ┌────────────┐
-//    │   /              \
-//    │  /                \
-//    │ /                  \
-//    └─────────────────────── time
-//      accel   cruise  decel
+//  【什么是运动规划？用开汽车来理解！】
 //
-//  The PID controller tracks this target velocity, resulting in smooth,
-//  controlled motion instead of jerky bang-bang control.
+//    如果你开车要从 A 到 B：
+//    1. 起步阶段：慢慢踩油门加速（不能一下子踩到底，太猛了！）
+//    2. 巡航阶段：到了限速就匀速行驶
+//    3. 减速阶段：快到 B 了，慢慢踩刹车，稳稳停下
 //
-//  FUTURE:
-//    • S-curve profile (jerk-limited) for even smoother motion
-//    • Asymmetric accel/decel rates
+//    画出来的速度曲线像一个梯形（所以叫"梯形速度规划"）：
+//
+//      速度
+//       ▲
+//       │    ┌────────────┐
+//       │   /              \
+//       │  /    巡航阶段     \
+//       │ /   (匀速行驶)      \
+//       └─────────────────────── 时间
+//        加速    巡航      减速
+//
+//  【注意】这个类有完整的单元测试（5 个测试用例都通过了），
+//    但在当前的运动控制中暂未使用（drive_to_pose 有自己的内建减速曲线）。
+//    保留它是为了将来更高级的运动控制升级。
+//
 // ============================================================================
 
 class MotionProfile {
 public:
-    /// @param max_v  maximum cruise velocity (m/s)
-    /// @param max_a  maximum acceleration and deceleration (m/s²)
+    /// 创建梯形速度规划器
+    /// @param max_v  最大巡航速度（米/秒）—— 相当于汽车的限速
+    /// @param max_a  最大加速度/减速度（米/秒²）—— 加速和刹车的最大力度
     MotionProfile(double max_v, double max_a);
 
-    /// Get the target velocity at a given moment.
-    /// @param time_elapsed   time since motion started (seconds)
-    /// @param distance_to_go remaining distance to target (meters, positive)
-    /// @return target velocity (m/s, always ≥ 0)
+    /// 计算当前时刻应该用多快的速度行驶
+    /// @param time_elapsed   运动开始到现在过了多久（秒）
+    /// @param distance_to_go 还剩多远到达目标（米，正数）
+    /// @return 目标速度（米/秒，总是 ≥ 0）
     double get_target_velocity(double time_elapsed, double distance_to_go);
 
 private:
-    double _max_velocity;
-    double _max_acceleration;
+    double _max_velocity;      // 最大巡航速度
+    double _max_acceleration;  // 最大加减速度
 };

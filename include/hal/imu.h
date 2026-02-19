@@ -1,25 +1,39 @@
 #pragma once
 // ============================================================================
-//  hal/imu.h — Hardware abstraction for the inertial sensor (IMU)
+//  hal/imu.h — 惯性传感器 (IMU) 接口（机器人的"内耳"）
 // ============================================================================
-//  The V5 inertial sensor provides heading (yaw) which is far more stable
-//  than encoder-only heading. We fuse both in odometry.cpp.
 //
-//  FUTURE: Add get_imu_pitch(), get_imu_roll() for tilt detection.
+//  【什么是 IMU？】
+//    IMU = Inertial Measurement Unit（惯性测量单元）。
+//    就像你闭着眼睛也能感觉到自己转了多少一样（靠内耳的前庭系统），
+//    IMU 里面有一个微型陀螺仪，能测量机器人转了多少角度。
+//    它不看轮子，所以就算轮子打滑，角度还是准的！
+//
+//  【什么是弧度？】
+//    弧度 (radian) 是角度的另一种写法：
+//      360° = 2π 弧度 ≈ 6.28 弧度
+//      180° = π  弧度 ≈ 3.14 弧度
+//       90° = π/2 弧度 ≈ 1.57 弧度
+//    程序里用弧度算三角函数（sin、cos）更方便。
+//
+//  【heading vs rotation 的区别】
+//    heading  = 当前朝向（0 ~ 2π 之间，超过 2π 自动回绕到 0）
+//    rotation = 累计旋转量（可以超过 2π，转两整圈就是约 4π）
+//
 // ============================================================================
 #include "hal/hal_log.h"
 
-/// Get current heading from the IMU in radians [0, 2π).
-/// Automatically converts from VEX degrees to radians.
+/// 获取 IMU 当前航向角（单位：弧度，范围 [0, 2π)）
+/// 自动把 VEX 返回的"度"转换成"弧度"
 double get_imu_heading_rad();
 
-/// Get total rotation (can exceed 360°) in radians.
-/// Useful for tracking cumulative turns.
+/// 获取 IMU 累计旋转量（单位：弧度，可以超过 2π）
+/// 比如转了两整圈就返回约 4π ≈ 12.57
 double get_imu_rotation_rad();
 
-/// Reset IMU heading to zero.
+/// 把 IMU 的角度归零
 void reset_imu();
 
-/// Calibrate the IMU. Blocks until calibration is complete.
-/// Call once during pre_auton().
+/// 校准 IMU（开机时调用一次，校准期间机器人必须静止不动！）
+/// 这个函数会"卡住"程序等校准完（最多等 3 秒）
 void calibrate_imu();

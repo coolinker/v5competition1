@@ -1,40 +1,44 @@
 #pragma once
 // ============================================================================
-//  hal/motors.h — Hardware abstraction for drivetrain motors
+//  hal/motors.h — 电机控制接口（管理 6 个驱动电机）
 // ============================================================================
-//  Why this exists:
-//    All motor access goes through these functions. When you change hardware
-//    (e.g. switch from 2-motor to 6-motor drive), you only edit motors.cpp.
-//    The rest of the codebase stays untouched.
 //
-//  ARCHITECTURE HIGHLIGHT:
-//    The API below is IDENTICAL for 2-motor and 6-motor configurations.
-//    set_drive_motors() sends the same voltage to ALL motors on a side.
-//    Odometry reads from a single "primary" encoder per side.
-//    Upper layers (PID, motion profile, drive_to_pose, turn_to_heading)
-//    are completely unaware of how many physical motors exist.
+//  【这个文件干什么？】
+//    把 6 个电机的复杂操作简化成几个简单函数。
+//    上层代码（PID、运动控制等）不需要知道有几个电机，
+//    只需要说"左边给多少电压，右边给多少电压"就行了。
+//    这叫"抽象"——把复杂的东西藏起来，对外只露出简单的接口。
 //
-//  FUTURE: Add functions for intake, catapult, flywheel, etc.
+//  【什么是电压控制？】
+//    V5 电机的电压范围是 -12V 到 +12V：
+//      +12V = 全速前进
+//        0V = 不动
+//      -12V = 全速倒退
+//    给的电压越大，转得越快。就像油门踩得越深车越快一样。
+//
+//  【布局】
+//    左侧 3 个 + 右侧 3 个 = 共 6 个电机
+//    同一侧的 3 个电机收到相同的电压命令（像一组"连体兄弟"）
+//
 // ============================================================================
-
 #include "hal/hal_log.h"
 
-/// Send voltage to left and right drive motors.
-/// In multi-motor configs, all motors on a side receive the same voltage.
-/// @param left_voltage  -12.0 to +12.0 (volts, positive = forward)
-/// @param right_voltage -12.0 to +12.0
+/// 给左右两组电机设定电压
+/// 同一侧的 3 个电机会收到完全相同的电压
+/// @param left_voltage  左侧电压，范围 -12.0 ~ +12.0（正数=前进）
+/// @param right_voltage 右侧电压，范围 -12.0 ~ +12.0（正数=前进）
 void set_drive_motors(double left_voltage, double right_voltage);
 
-/// Stop all drive motors immediately (coast / brake depending on config).
+/// 立即刹停所有电机
 void stop_drive_motors();
 
-/// Read cumulative encoder position (ticks) for left side.
-/// In multi-motor configs, reads from the designated primary encoder motor.
+/// 读取左侧电机编码器的累计脉冲数
+/// ⚠ 目前里程计用的是追踪轮，这个函数预留给将来使用
 double get_left_encoder_ticks();
 
-/// Read cumulative encoder position (ticks) for right side.
-/// In multi-motor configs, reads from the designated primary encoder motor.
+/// 读取右侧电机编码器的累计脉冲数
+/// ⚠ 目前里程计用的是追踪轮，这个函数预留给将来使用
 double get_right_encoder_ticks();
 
-/// Zero both drive encoders.
+/// 把两侧电机的编码器计数归零
 void reset_encoders();

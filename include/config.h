@@ -1,232 +1,323 @@
 #pragma once
 // ============================================================================
-//  config.h — Single source of truth for ALL tunable parameters
+//  config.h — 全部可调参数的唯一来源（相当于机器人的"设置菜单"）
 // ============================================================================
-//  HOW TO USE:
-//    1. Measure your robot and fill in the "Physical" section
-//    2. Start with the default PID values below
-//    3. Tune on the field: P first, then D, then I (if needed)
-//    4. Never hard-code numbers anywhere else — always reference this file
 //
-//  ROBOT CONFIGURATIONS:
-//    Uncomment exactly ONE of the defines below to select your drivetrain.
-//    Each config sets its own physical dimensions, PID gains, motor ports,
-//    and performance parameters.  The rest of the codebase (control,
-//    localization, motion) works unchanged — this is the power of the
-//    layered architecture.
+//  【这个文件是什么？】
+//    想象你在游戏里调灵敏度、音量——这个文件就是机器人的所有"设置项"。
+//    整个项目里只有这一个地方存放数字，其它代码全部引用这里的值。
+//    这样做的好处：改一个数字就能影响整个程序，不用到处找。
 //
-//  FUTURE: When you add new subsystems (intake, catapult, wings, etc.)
-//          add their constants here too.
+//  【怎么用？】
+//    1. 拿尺子量你的机器人，把测量结果填到下面
+//    2. 先用默认的 PID 值跑一跑，然后在赛场上一个一个调
+//    3. 调参顺序: 先调 P → 再调 D → 最后调 I
+//
+//  【什么是 constexpr？】
+//    constexpr 是 C++ 里的关键字，意思是"编译时就确定的常量"。
+//    它和 const 类似，但更严格——编译器在你写代码时就把值算好了，
+//    运行时不占额外内存，速度更快。
+//
 // ============================================================================
-
-// ─── Robot Configuration Selector ──────────────────────────────────────────
-//
-//  Uncomment ONE of the following lines:
-//
-//    ROBOT_2MOTOR  — Entry-level 2-motor differential drive (simple, cheap)
-//    ROBOT_6MOTOR  — Advanced 6-motor drive (fast, powerful, competition)
-//
-//  Then rebuild.  Only config.h, motors.cpp, and main.cpp contain
-//  conditional code — everything else (PID, odometry, motion profile,
-//  drive_to_pose, turn_to_heading) is reused as-is.
-// ────────────────────────────────────────────────────────────────────────────
-
-#define ROBOT_2MOTOR    // ← Entry-level: 1 left + 1 right motor
-// #define ROBOT_6MOTOR    // ← Advanced:    3 left + 3 right motors (600 RPM blue)
-
-// ============================================================================
-//  Guard: exactly one config must be selected
-// ============================================================================
-#if defined(ROBOT_2MOTOR) && defined(ROBOT_6MOTOR)
-  #error "Select only ONE robot config: ROBOT_2MOTOR or ROBOT_6MOTOR"
-#endif
-#if !defined(ROBOT_2MOTOR) && !defined(ROBOT_6MOTOR)
-  #error "Select a robot config: uncomment ROBOT_2MOTOR or ROBOT_6MOTOR above"
-#endif
 
 // ############################################################################
-//  ENTRY-LEVEL — 2-Motor Differential Drive
+//  1. 物理参数 — 拿尺子量你的机器人后修改这些值
 // ############################################################################
-#ifdef ROBOT_2MOTOR
-
-// ─── Physical Constants (MUST measure your robot) ──────────────────────────
 //
-//  WHEEL_DIAMETER : measure with calipers across the tread (meters)
-//  WHEEL_TRACK    : center-to-center distance between left & right wheels (m)
-//  TICKS_PER_REV  : encoder ticks for one full wheel revolution
-//                   V5 motors: 360 (18:1 green), 900 (36:1 red), 1800 (6:1 blue)
+//  接线图 (从上往下看你的机器人):
 //
-constexpr double WHEEL_DIAMETER   = 0.1016;   // 4-inch wheels → 0.1016 m
-constexpr double WHEEL_TRACK      = 0.381;    // ~15 inches → 0.381 m
-constexpr double TICKS_PER_REV    = 360.0;    // green cartridge (18:1)
+//     Port 1 [左前电机]  ──── [右前电机] Port 4
+//     Port 2 [左中电机]  ──── [右中电机] Port 5
+//     Port 3 [左后电机]  ──── [右后电机] Port 6
+//
+//     IMU (陀螺仪)    = Port 10
+//     左追踪轮传感器   = Port 8  (V5 旋转传感器)
+//     右追踪轮传感器   = Port 9  (V5 旋转传感器)
+//     AI 摄像头       = Port 12
+//
 
-// ─── Odometry ──────────────────────────────────────────────────────────────
+// 驱动轮直径（单位：米）
+// 怎么量？把轮子拆下来，用尺子量最宽的地方
+// 3.25 英寸 = 0.08255 米（1 英寸 = 0.0254 米）
+constexpr double WHEEL_DIAMETER   = 0.08255;
+
+// 左右两排轮子之间的距离（中心到中心，单位：米）
+// 怎么量？量左轮正中间到右轮正中间的距离
+constexpr double WHEEL_TRACK      = 0.330;    // ~13 英寸
+
+// 编码器每转一圈产生多少个脉冲
+// 蓝色墨盒(600RPM 高速)齿轮比为 6:1，对应 300 ticks/圈
+constexpr double TICKS_PER_REV    = 300.0;
+
+// 轮子周长 = π × 直径（初中数学：圆的周长公式 C = πd）
+// 知道周长后，编码器转了多少圈 → 就知道走了多远
+constexpr double WHEEL_CIRCUMFERENCE = 3.14159265358979 * WHEEL_DIAMETER;
+
+// ############################################################################
+//  2. 电机端口 — 告诉程序每个电机插在 Brain 的哪个口
+// ############################################################################
+//  注意：VEX SDK 端口号从 0 开始，但 Brain 上标的是从 1 开始
+//  所以"物理端口 1"在代码里写 0，"物理端口 4"在代码里写 3
+constexpr int LEFT_FRONT_MOTOR_PORT  = 0;   // Brain 上标的端口 1
+constexpr int LEFT_MID_MOTOR_PORT    = 1;   // Brain 上标的端口 2
+constexpr int LEFT_REAR_MOTOR_PORT   = 2;   // Brain 上标的端口 3
+constexpr int RIGHT_FRONT_MOTOR_PORT = 3;   // Brain 上标的端口 4
+constexpr int RIGHT_MID_MOTOR_PORT   = 4;   // Brain 上标的端口 5
+constexpr int RIGHT_REAR_MOTOR_PORT  = 5;   // Brain 上标的端口 6
+constexpr int MOTORS_PER_SIDE        = 3;   // 每侧 3 个电机
+
+// ############################################################################
+//  3. 惯性传感器 (IMU) — 机器人的"内耳"，感知旋转
+// ############################################################################
+//  IMU 就像你的内耳：闭着眼也能感觉到自己转了多少度。
+//  它比用轮子编码器算出来的角度更准，因为轮子会打滑，但 IMU 不会。
+constexpr int    IMU_PORT         = 9;    // Brain 上标的端口 10
+
+// IMU 融合系数 α（alpha）：决定多大程度信任 IMU 的角度
+//   α = 1.0 → 100% 信任 IMU（忽略轮子算出来的角度）
+//   α = 0.0 → 100% 信任轮子编码器（忽略 IMU）
+//   α = 0.98 → 98% 信任 IMU + 2% 信任编码器（推荐值）
+// 为什么不 100% 信任 IMU？因为 IMU 长时间会有一点点漂移
 constexpr double IMU_FUSION_ALPHA = 0.98;
 
-// ─── Turn PID ──────────────────────────────────────────────────────────────
-//
-//  Tuning guide:
-//    1. Set I=0, D=0. Increase P until the robot oscillates around target
-//    2. Increase D to dampen oscillation
-//    3. Only add I if there is persistent steady-state error
-//
-constexpr double TURN_KP = 2.0;
-constexpr double TURN_KI = 0.0;
-constexpr double TURN_KD = 0.1;
-constexpr double TURN_SETTLE_RAD      = 0.035;  // ~2° — "close enough"
-constexpr double TURN_SETTLE_TIME_MS  = 200;    // must stay within tolerance this long
-constexpr double TURN_TIMEOUT_MS      = 2000;   // give up after this
-
-// ─── Drive PID ─────────────────────────────────────────────────────────────
-constexpr double DRIVE_KP = 5.0;
-constexpr double DRIVE_KI = 0.0;
-constexpr double DRIVE_KD = 0.3;
-constexpr double DRIVE_SETTLE_M       = 0.02;   // 2 cm
-constexpr double DRIVE_SETTLE_TIME_MS = 200;
-constexpr double DRIVE_TIMEOUT_MS     = 5000;
-
-// ─── Heading Correction ────────────────────────────────────────────────────
-constexpr double HEADING_CORRECTION_KP = 3.0;
-
-// ─── Motion Profile ────────────────────────────────────────────────────────
-constexpr double MAX_VELOCITY     = 0.8;   // m/s — start slower, increase later
-constexpr double MAX_ACCELERATION = 1.5;   // m/s²
-
-// ─── Motor Ports ───────────────────────────────────────────────────────────
-//  VEX ports are 0-indexed: physical port 1 = 0, port 2 = 1, etc.
-constexpr int LEFT_MOTOR_PORT  = 0;   // physical port 1
-constexpr int RIGHT_MOTOR_PORT = 1;   // physical port 2
-constexpr int IMU_PORT         = 4;   // physical port 5
-
-// ─── Motor Count (used by HAL) ─────────────────────────────────────────────
-constexpr int MOTORS_PER_SIDE = 1;
-
-#endif // ROBOT_2MOTOR
+// 注意：垂直双轮方案中，旋转角度 100% 来自 IMU（没有第二个平行轮来计算旋转）。
+// IMU_FUSION_ALPHA 在此方案中仅作为预留参数。
 
 // ############################################################################
-//  ADVANCED — 6-Motor High-Performance Drivetrain
+//  4. 追踪轮 (Dead Wheels) — 机器人的"测量尺"（垂直双轮方案）
 // ############################################################################
 //
-//  Why 6 motors?
-//    • 3× the torque of a 2-motor drive → push battles, fast acceleration
-//    • 600 RPM blue cartridge → higher top speed with gearing headroom
-//    • 6 wheels (front/middle/rear per side) → better traction & stability
-//    • Same software architecture — only the HAL layer changes!
+//  【什么是追踪轮？】
+//    追踪轮是两个不带电机的小轮子，靠弹簧压在地面上自由滚动。
+//    它们上面装了高精度旋转传感器（V5 Rotation Sensor），
+//    精度达到 0.01°（一圈 36000 个刻度），比电机编码器精确得多。
 //
-//  Wiring diagram (top-down view):
+//  【为什么需要追踪轮？】
+//    驱动轮（带电机的大轮子）在加速、转弯、被推时会打滑，
+//    导致用电机编码器算出来的距离不准。
+//    追踪轮没有动力，不会打滑，所以测量更准确。
+//    就像你用卷尺量距离比用步数估算更准一样。
 //
-//     Port 1 [L-Front]   ──── [R-Front]  Port 4
-//     Port 2 [L-Mid  ]   ──── [R-Mid  ]  Port 5
-//     Port 3 [L-Rear ]   ──── [R-Rear ]  Port 6
-//                     IMU = Port 10
+//  【垂直双轮方案】
+//    两个追踪轮呈十字形安装：
+//    • 纵向轮（Forward）：朝前，测量前后位移
+//    • 横向轮（Lateral）：朝右，测量左右侧滑
+//    旋转角度完全由 IMU 提供。
 //
-//  Encoder strategy:
-//    Only the MIDDLE motor on each side is read for odometry.
-//    Middle wheels have the most consistent ground contact and
-//    are least affected by turning scrub or wheelies.
+//    俯视图：
+//                ↑ 前进方向
+//                |
+//         [纵向轮(↑)]
+//                |
+//       ——[横向轮(→)]——
+//                |
 //
+//    为什么比平行双轮更好？
+//    • 能检测侧向滑动（被对手撞歪时也能准确追踪）
+//    • 安装更灵活（不需要严格对称）
+//
+//  【怎么装？】
+//    用 2.75 英寸全向轮（表面有小滚轮，方便侧向滑）。
+//    纵向轮朝前进方向安装，横向轮垂直于前进方向安装。
+//    两个轮子都用弹簧浮动支架确保始终贴地。
+//
+constexpr int  FORWARD_TRACKING_PORT  = 7;     // 纵向轮端口（Brain 上标的端口 8）
+constexpr int  LATERAL_TRACKING_PORT  = 8;     // 横向轮端口（Brain 上标的端口 9）
+
+// 如果追踪轮方向反了（前进/右移时读数变小），就把这里设成 true
+constexpr bool FORWARD_TRACKING_REVERSED = false;
+constexpr bool LATERAL_TRACKING_REVERSED = false;
+
+// 追踪轮轮子直径（2.75 英寸 = 0.06985 米）
+constexpr double TRACKING_WHEEL_DIAMETER      = 0.06985;
+
+// 追踪轮周长 = π × 直径
+constexpr double TRACKING_WHEEL_CIRCUMFERENCE = 3.14159265358979 * TRACKING_WHEEL_DIAMETER;
+
+// ── 追踪轮偏移量（关键参数！需要精确测量）──
+//
+//  偏移量是追踪轮到机器人旋转中心的距离。
+//  当机器人旋转时，偏离中心的轮子会画一段弧——
+//  这段弧不是真正的平移，需要在算法中减掉。
+//
+//  【纵向轮侧向偏移】
+//    纵向轮到机器人中心线的垂直距离（单位：米）
+//    如果纵向轮在中心线右边 → 正数，左边 → 负数
+//    如果正好在中心线上 → 0（理想安装位置）
+constexpr double FORWARD_WHEEL_OFFSET = 0.0;   // 纵向轮的侧向偏移（米）
+
+//  【横向轮纵向偏移】
+//    横向轮到机器人旋转中心的前后距离（单位：米）
+//    如果横向轮在旋转中心后方 → 负数（常见），前方 → 正数
+//    例如：横向轮装在机器人中心后方 5cm → -0.05
+constexpr double LATERAL_WHEEL_OFFSET = -0.05; // 横向轮的纵向偏移（米）
+
 // ############################################################################
-#ifdef ROBOT_6MOTOR
+//  5. 转弯 PID — 控制机器人精确转到指定角度
+// ############################################################################
+//
+//  【什么是 PID？】
+//    PID 是三个数字的组合，帮助机器人"聪明地"到达目标：
+//      P（比例）= 离目标越远，越使劲。就像你离教室越远，走得越快。
+//      I（积分）= 如果一直差一点点到不了，就慢慢加力。像推一扇很紧的门。
+//      D（微分）= 快到目标时提前减速。像骑车快到终点时捏刹车，防止冲过头。
+//
+//  【调参顺序】
+//    第一步：I=0, D=0，只调 P → 增大 P 直到机器人开始左右摇摆（振荡）
+//    第二步：保持 P，增大 D → 振荡消失，快而稳
+//    第三步：如果还差一点点到不了位 → 加一丁点 I
+//
+constexpr double TURN_KP = 3.5;   // P (比例)：数字越大转弯越猛
+constexpr double TURN_KI = 0.02;  // I (积分)：数字越大越能消除小误差，但太大会振荡
+constexpr double TURN_KD = 0.25;  // D (微分)：数字越大刹车越猛，防过冲
 
-// ─── Physical Constants ────────────────────────────────────────────────────
-//
-//  Larger wheels + wider track are common on 6-motor competition bots
-//  Adjust these to match YOUR specific build
-//
-constexpr double WHEEL_DIAMETER   = 0.08255;  // 3.25-inch wheels → 0.08255 m
-constexpr double WHEEL_TRACK      = 0.330;    // ~13 inches → 0.330 m (compact, agile)
-constexpr double TICKS_PER_REV    = 300.0;    // blue cartridge (6:1) = 300 ticks/rev
+// 到位容差：误差小于这个值就算"到了"（0.025 弧度 ≈ 1.4°）
+constexpr double TURN_SETTLE_RAD     = 0.025;
 
-// ─── Odometry ──────────────────────────────────────────────────────────────
-constexpr double IMU_FUSION_ALPHA = 0.98;
+// 必须在容差范围内持续待够这么久（毫秒）才算真正稳定
+// 防止机器人刚好经过目标角度就停下来（像"路过"不算"到达"）
+constexpr double TURN_SETTLE_TIME_MS = 150;
 
-// ─── Turn PID ──────────────────────────────────────────────────────────────
-//
-//  Higher gains because 6 motors have much more torque:
-//    • P higher → responds faster with 3× the push
-//    • D higher → dampens the stronger inertia
-//    • Tighter settle tolerance achievable with more torque
-//
-constexpr double TURN_KP = 3.5;
-constexpr double TURN_KI = 0.02;
-constexpr double TURN_KD = 0.25;
-constexpr double TURN_SETTLE_RAD      = 0.025;  // ~1.4° — tighter tolerance, more torque
-constexpr double TURN_SETTLE_TIME_MS  = 150;    // settles faster with more power
-constexpr double TURN_TIMEOUT_MS      = 1500;   // quicker timeout — should turn fast
+// 超时时间：超过这么久还没到位就强制停止（防止卡死）
+constexpr double TURN_TIMEOUT_MS     = 1500;
 
-// ─── Drive PID ─────────────────────────────────────────────────────────────
-//
-//  More aggressive than 2-motor: the extra torque allows tighter control
-//
+// 积分抗饱和上限：限制 I 项不能无限增大
+// 想象水杯有个最大容量，满了就不再倒了
+constexpr double TURN_INTEGRAL_LIMIT = 3.0;
+
+// 微分低通滤波系数（0~1）：让 D 项更平滑，减少抖动
+// 越大越平滑但反应也越慢，0 = 不滤波
+constexpr double TURN_D_FILTER       = 0.5;
+
+// ############################################################################
+//  6. 直线运动参数 — 控制机器人走到目标位置
+// ############################################################################
+//  注意：drive_to_pose 实际使用的是转弯 PID（第 5 节）来修正行驶中的航向，
+//  下面的 DRIVE_KP/KI/KD 是预留给未来独立直线 PID 使用的（目前未启用）。
 constexpr double DRIVE_KP = 8.0;
 constexpr double DRIVE_KI = 0.05;
 constexpr double DRIVE_KD = 0.5;
-constexpr double DRIVE_SETTLE_M       = 0.015;  // 1.5 cm — more precise
+
+// 位置到位容差：距离目标小于 1.5 厘米就算"到了"
+constexpr double DRIVE_SETTLE_M       = 0.015;
+
+// 必须在容差内持续待够 150 毫秒才算稳定
 constexpr double DRIVE_SETTLE_TIME_MS = 150;
+
+// 超时 4 秒：如果 4 秒还没到就放弃（防止卡死）
 constexpr double DRIVE_TIMEOUT_MS     = 4000;
 
-// ─── Heading Correction ────────────────────────────────────────────────────
+// 直线行驶时的航向修正增益（预留，目前 drive_to_pose 使用 TURN_KP 代替）
 constexpr double HEADING_CORRECTION_KP = 4.5;
 
-// ─── PID Enhancements (competition-grade) ──────────────────────────────────
-//
-//  These activate anti-windup and derivative filtering in PID controllers.
-//  Only used by 6-motor motion code; the entry-level 2-motor config does
-//  not call the setters, so PID runs in basic mode for that config.
-//
-constexpr double DRIVE_INTEGRAL_LIMIT  = 5.0;   // anti-windup: max |∫error·dt|
-constexpr double DRIVE_D_FILTER        = 0.7;   // derivative EMA alpha (0=off)
-constexpr double TURN_INTEGRAL_LIMIT   = 3.0;
-constexpr double TURN_D_FILTER         = 0.5;
-
-// ─── Boomerang Controller ──────────────────────────────────────────────────
-//
-//  Replaces turn-then-drive with a smooth curved approach.
-//  A "carrot" point is placed behind the target along its heading vector;
-//  as the robot closes in, the carrot converges to the target, producing
-//  a natural arc that arrives at the correct (x, y, θ).
-//
-constexpr double BOOMERANG_LEAD        = 0.6;   // carrot lead factor [0, 1]
-
-// ─── Motion Profile ────────────────────────────────────────────────────────
-//
-//  Much faster than 2-motor drive:
-//    • 600 RPM blue cartridge + 3.25" wheels ≈ 1.3 m/s theoretical max
-//    • 3× motors = 3× torque for aggressive acceleration
-//
-constexpr double MAX_VELOCITY     = 1.2;   // m/s — near max for blue cartridge
-constexpr double MAX_ACCELERATION = 3.0;   // m/s² — twice the accel with 3× torque
-
-// ─── Motor Ports ───────────────────────────────────────────────────────────
-//
-//  6 drive motors: 3 left + 3 right
-//  VEX ports are 0-indexed: physical port 1 = 0, etc.
-//
-constexpr int LEFT_FRONT_MOTOR_PORT  = 0;   // physical port 1
-constexpr int LEFT_MID_MOTOR_PORT    = 1;   // physical port 2
-constexpr int LEFT_REAR_MOTOR_PORT   = 2;   // physical port 3
-constexpr int RIGHT_FRONT_MOTOR_PORT = 3;   // physical port 4
-constexpr int RIGHT_MID_MOTOR_PORT   = 4;   // physical port 5
-constexpr int RIGHT_REAR_MOTOR_PORT  = 5;   // physical port 6
-constexpr int IMU_PORT               = 9;   // physical port 10
-
-// ─── Motor Count (used by HAL) ─────────────────────────────────────────────
-constexpr int MOTORS_PER_SIDE = 3;
-
-// ─── Encoder Source ────────────────────────────────────────────────────────
-//  Which motor's encoder to read for odometry (0=front, 1=mid, 2=rear)
-//  Middle motor recommended: best ground contact, least turning scrub
-constexpr int ENCODER_MOTOR_INDEX = 1;  // middle motor
-
-#endif // ROBOT_6MOTOR
+// 直线 PID 的积分上限和微分滤波（预留）
+constexpr double DRIVE_INTEGRAL_LIMIT = 5.0;
+constexpr double DRIVE_D_FILTER       = 0.7;
 
 // ############################################################################
-//  SHARED CONSTANTS — apply to ALL robot configurations
+//  7. 运动规划 — 控制机器人加速和减速的"舒适度"
 // ############################################################################
+//
+//  想象坐电梯：如果电梯突然起步、突然停下，你会很不舒服。
+//  运动规划就是让机器人"慢慢加速 → 匀速行驶 → 慢慢减速"，
+//  画出来的速度曲线像梯形，所以叫"梯形速度规划"。
+//
 
-// Derived constant — do not change manually
-constexpr double WHEEL_CIRCUMFERENCE = 3.14159265358979 * WHEEL_DIAMETER;
+// 最大速度（米/秒）—— 蓝色墨盒理论极速约 1.3 m/s
+constexpr double MAX_VELOCITY     = 1.2;
 
-// ─── Control Loop Timing ───────────────────────────────────────────────────
-constexpr int LOOP_INTERVAL_MS = 10;   // 100 Hz control loop
+// 最大加速度（米/秒²）—— 越大起步越猛，但太猛轮子会打滑
+constexpr double MAX_ACCELERATION = 3.0;
+
+// ─── Boomerang 控制器 ──────────────────────────────────────────────────────
+//  【什么是 Boomerang？】
+//    普通方法：先原地转到目标方向 → 再直线走过去（像走 L 型路线）
+//    Boomerang：直接走一条弧线到达目标（像扔回力镖一样画弧线）
+//    这样更快、更流畅，路线也更短。
+//
+//  BOOMERANG_LEAD 控制弧线的弯曲程度：
+//    0.0 = 走直线（不管最终朝向）
+//    0.6 = 中等弧线（推荐值）
+//    1.0 = 大弧线
+constexpr double BOOMERANG_LEAD   = 0.6;
+
+// ############################################################################
+//  8. 控制循环间隔 — 机器人大脑"思考"的频率
+// ############################################################################
+//  机器人每隔 10 毫秒读一次传感器、算一次、发一次命令
+//  10 毫秒 = 每秒 100 次 = 100 Hz
+//  就像玩游戏的帧率：100 帧比 10 帧更流畅
+constexpr int LOOP_INTERVAL_MS = 10;
+
+// ############################################################################
+//  9. 日志与调试 — 让你能看到机器人"脑子里在想什么"
+// ############################################################################
+//  日志级别越高，输出的信息越详细（但也越多，SD 卡写入量越大）
+//  0 = 只显示严重错误
+//  1 = 加上警告
+//  2 = 加上一般信息（推荐）
+//  3 = 全部细节（调试用，信息量巨大）
+constexpr int LOG_VERBOSITY           = 2;
+
+// Brain 屏幕刷新间隔：50 毫秒 = 每秒 20 次
+constexpr int SCREEN_UPDATE_INTERVAL_MS = 50;
+
+// ############################################################################
+//  10. AI 视觉传感器 — 用摄像头看 AprilTag 标签来确定位置
+// ############################################################################
+//
+//  【什么是 AprilTag？】
+//    它是一种印在纸上的黑白方块图案（像二维码），贴在赛场墙壁上。
+//    摄像头看到它后，可以算出"我离这个标签有多远"和"标签在我的哪个方向"，
+//    从而推算出机器人在赛场上的绝对位置。
+//
+//  【为什么需要它？】
+//    里程计（用轮子算位置）时间久了会积累误差，越来越不准。
+//    视觉定位可以"纠偏"——像 GPS 给你修正位置一样。
+//
+constexpr int    VISION_PORT          = 11;   // Brain 上标的端口 12
+
+// 摄像头焦距（像素单位）—— 出厂固定值，不用改
+constexpr double VISION_FOCAL_LENGTH  = 280.0;
+
+// 摄像头画面分辨率（宽 × 高，像素）
+constexpr double VISION_IMAGE_WIDTH   = 320.0;
+constexpr double VISION_IMAGE_HEIGHT  = 240.0;
+
+// AprilTag 标签的真实边长（米）—— 标准标签为 10cm = 0.1m
+// 知道真实大小后，摄像头里标签看起来越小 = 离得越远
+constexpr double APRILTAG_REAL_SIZE   = 0.1;
+
+// 摄像头安装位置（相对机器人中心的偏移，单位：米）
+// X = 前后偏移（正 = 在中心前方 10cm 处）
+// Y = 左右偏移（0 = 正中间）
+constexpr double VISION_CAMERA_OFFSET_X = 0.10;
+constexpr double VISION_CAMERA_OFFSET_Y = 0.00;
+
+// 摄像头安装角度（弧度）—— 0 = 正朝前
+constexpr double VISION_CAMERA_ANGLE    = 0.0;
+
+// 标签在画面中至少要占这么多像素才认为有效（太小太模糊不可靠）
+constexpr double MIN_TAG_PIXELS       = 12.0;
+
+// 视觉定位的最大有效距离（超过 2.5 米的标签忽略，太远不准）
+constexpr double MAX_VISION_RANGE     = 2.5;
+
+// 视觉修正强度 α：每次修正多少？
+//   0.0 = 完全不修正（视觉白看了）
+//   1.0 = 完全相信视觉（会跳来跳去）
+//   0.4 = 温和修正（推荐）
+constexpr double VISION_CORRECTION_ALPHA     = 0.4;
+
+// 单次修正的最大强度上限（防止一次改太多）
+constexpr double VISION_MAX_CORRECTION_ALPHA = 0.5;
+
+// 最低置信度：低于 15% 的检测结果不使用（不太确定的就不信）
+constexpr double VISION_MIN_CONFIDENCE       = 0.15;
+
+// 单次最大修正距离（米）：如果视觉说你偏了 30cm 以上，不信（可能是误检测）
+constexpr double VISION_MAX_CORRECTION_M     = 0.30;
+
+// 视觉更新间隔：50 毫秒 = 每秒 20 次
+constexpr int    VISION_UPDATE_INTERVAL_MS   = 50;
 

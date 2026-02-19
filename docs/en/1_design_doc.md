@@ -6,195 +6,192 @@
 
 1. [Overview](#1-overview)
 2. [System Architecture](#2-system-architecture)
-3. [Robot Configurations](#3-robot-configurations)
+3. [Robot Hardware Configuration](#3-robot-hardware-configuration)
 4. [Layer-by-Layer Design](#4-layer-by-layer-design)
-   - 4.1 [Config](#41-config)
-   - 4.2 [HAL — Hardware Abstraction Layer](#42-hal--hardware-abstraction-layer)
+   - 4.1 [Configuration Layer](#41-configuration-layer)
+   - 4.2 [Hardware Abstraction Layer (HAL)](#42-hardware-abstraction-layer-hal)
    - 4.3 [Localization — Odometry](#43-localization--odometry)
    - 4.4 [Control — PID & Motion Profile](#44-control--pid--motion-profile)
-   - 4.5 [Motion — High-level Commands](#45-motion--high-level-commands)
-   - 4.6 [Main — Application Entry](#46-main--application-entry)
+   - 4.5 [Motion — High-Level Commands](#45-motion--high-level-commands)
+   - 4.6 [Main Program Entry](#46-main-program-entry)
 5. [Data Flow](#5-data-flow)
-6. [Key Algorithms](#6-key-algorithms)
-7. [Architecture Strengths Demonstrated](#7-architecture-strengths-demonstrated)
+6. [Core Algorithms](#6-core-algorithms)
+7. [Architecture Strengths](#7-architecture-strengths)
 8. [Future Roadmap](#8-future-roadmap)
 
 ---
 
 ## 1. Overview
 
-This project is a modular software architecture for a VEX V5 competition robot. It is designed to be:
+This project is a modular software architecture for a VEX V5 competition robot. Design goals:
 
-- **Simple to start** — works out of the box with a basic differential-drive robot
-- **Easy to understand** — every file has one clear responsibility
-- **Extensible** — ready to grow into a top-level competition codebase
-
-The codebase supports **multiple robot configurations** — from a simple 2-motor starter bot to an advanced 6-motor competition drivetrain — all sharing the same control, localization, and motion code. Switch between them by changing one `#define` in `config.h`.
+- **Easy to understand** — each file does one thing
+- **Extensible** — features can be added incrementally
+- **Competition-ready** — high-precision tracking wheel odometry + vision correction
 
 The software provides:
 
-1. **Position tracking** (odometry) — "Where am I on the field?"
-2. **PID control** — "How do I smoothly reach my target?"
-3. **Motion profiling** — "How do I accelerate and decelerate smoothly?"
-4. **Autonomous movement** — "Drive to this point" or "Turn to this heading"
+1. **Position tracking** (odometry) — "Where am I on the field?" (perpendicular dual tracking wheels + IMU)
+2. **Vision localization** — AI Vision detects AprilTag markers to correct accumulated drift
+3. **PID control** — "How do I smoothly reach my target?"
+4. **Motion profiling** — "How do I accelerate and decelerate smoothly?"
+5. **Autonomous motion** — "Drive to this point" or "Turn to this heading"
 
 ---
 
 ## 2. System Architecture
 
-The software is organized in **layers**, like a stack. Higher layers use lower layers, but never the reverse.
+The software is organized in **layers**, like a stack of building blocks. Upper layers use lower layers, but lower layers never depend on upper ones.
 
 ```
 ┌─────────────────────────────────────────────┐
-│              main.cpp                       │  ← Application (top)
-│         (competition callbacks)             │
+│              main.cpp                       │  ← Application layer (top)
+│          (competition callbacks)            │
 ├─────────────────────────────────────────────┤
-│     motion/                                 │  ← High-level commands
-│   turn_to_heading    drive_to_pose          │     "turn 90°", "drive to (1,0)"
+│     motion/                                 │  ← Motion command layer
+│   turn_to_heading    drive_to_pose          │     "Turn 90°", "Drive to (1,0)"
 ├─────────────────────────────────────────────┤
-│     control/                                │  ← Algorithms
+│     control/                                │  ← Algorithm layer
 │   PIDController      MotionProfile          │     PID math, velocity planning
 ├─────────────────────────────────────────────┤
-│     localization/                           │  ← State estimation
-│   odometry (Pose: x, y, θ)                 │     "Where am I?"
+│     localization/                           │  ← State estimation layer
+│   odometry (Pose: x, y, θ)                 │     "Where am I?" (tracking + IMU)
+│   vision_localizer (AprilTag → abs. pos.)   │     Vision correction
 ├─────────────────────────────────────────────┤
-│     hal/                                    │  ← Hardware Abstraction
-│   motors    imu    time                     │     Talks to real hardware
+│     hal/                                    │  ← Hardware abstraction layer
+│   motors  imu  time  tracking_wheels        │     Talk to real hardware
+│   vision  hal_log                           │
 ├─────────────────────────────────────────────┤
 │     config.h                                │  ← Constants
-│   (ports, dimensions, PID gains)            │     Single source of truth
+│   (ports, dimensions, PID gains, offsets)   │     Single source of truth
 └─────────────────────────────────────────────┘
 ```
 
 **Why layers?**
 
-- You can **test** upper layers without real hardware (mock the HAL)
-- You can **swap hardware** (different motors, sensors) by only changing the HAL
+- Test upper logic **without hardware** (mock HAL)
+- **Swap hardware** by changing only HAL (different motors, sensors)
 - Each layer can be developed and debugged independently
 
 ---
 
-## 3. Robot Configurations
+## 3. Robot Hardware Configuration
 
-The codebase ships with two ready-to-use drivetrain configurations.
-Select one by uncommenting a single `#define` in `config.h`:
+This project targets a **6-motor differential drivetrain** + **perpendicular dual tracking wheels** + **IMU** + **AI Vision**.
 
-| | **ROBOT_2MOTOR** (entry-level) | **ROBOT_6MOTOR** (advanced) |
-|---|---|---|
-| **Motors** | 1 left + 1 right | 3 left + 3 right |
-| **Cartridge** | Green 18:1 (200 RPM) | Blue 6:1 (600 RPM) |
-| **Wheels** | 4" (0.1016 m) | 3.25" (0.08255 m) |
-| **Top speed** | 0.8 m/s | 1.2 m/s |
-| **Acceleration** | 1.5 m/s² | 3.0 m/s² |
-| **Torque** | 1× baseline | 3× baseline |
-| **Turn tolerance** | ~2° | ~1.4° |
-| **Best for** | Learning, prototyping | Competition, pushing |
+### Hardware Bill of Materials
 
-### What changes between configs?
+| Device | Qty | Port | Notes |
+|--------|-----|------|-------|
+| V5 Motor (Blue 600RPM) | 6 | Port 1-6 | 3 left + 3 right |
+| V5 Inertial Sensor (IMU) | 1 | Port 10 | Mounted level at chassis center |
+| V5 Rotation Sensor (forward tracking) | 1 | Port 8 | 2.75" omni wheel, parallel to drive direction |
+| V5 Rotation Sensor (lateral tracking) | 1 | Port 9 | 2.75" omni wheel, perpendicular to drive direction |
+| V5 AI Vision Sensor | 1 | Port 12 | Front-facing |
+
+### Wiring Diagram
 
 ```
-  Files with config-specific code:     Files that stay IDENTICAL:
-  ────────────────────────────         ──────────────────────────
-  config.h          ← constants        control/pid.h & .cpp
-  motors.cpp        ← HAL impl         control/motion_profile.h & .cpp
-  main.cpp          ← hw objects       hal/motors.h   ← API unchanged!
-  odometry.cpp      ← 6M delta fusion  hal/imu.h & .cpp
-  drive_to_pose.cpp ← 6M Boomerang     hal/time.h & .cpp
-  turn_to_heading.cpp ← 6M PID tuning  localization/odometry.h ← API unchanged!
-                                        motion/drive_to_pose.h
-                                        motion/turn_to_heading.h
+  Port 1 [Left Front]  ──────  [Right Front] Port 4
+  Port 2 [Left Mid]    ──────  [Right Mid]   Port 5
+  Port 3 [Left Rear]   ──────  [Right Rear]  Port 6
+
+  Port 10 = IMU (Inertial Sensor)
+  Port 8  = Forward Tracking Wheel (Rotation Sensor)
+  Port 9  = Lateral Tracking Wheel (Rotation Sensor)
+  Port 12 = AI Vision Sensor
 ```
 
-**Config-specific code uses `#ifdef ROBOT_6MOTOR` blocks** — the 2-motor code path is preserved unchanged in `#else` branches. All header APIs remain identical.
-
-### 6-Motor Wiring Diagram
+### Tracking Wheel Layout (Perpendicular Dual-Wheel Scheme)
 
 ```
-  Port 1 [L-Front]  ──────  [R-Front]  Port 4
-  Port 2 [L-Mid  ]  ──────  [R-Mid  ]  Port 5    ← encoder source
-  Port 3 [L-Rear ]  ──────  [R-Rear ]  Port 6
-                   IMU = Port 10
+         ↑ Forward
+         |
+  [Fwd wheel(↑)]    ← Measures forward/backward displacement
+         |
+—[Lat wheel(→)]—    ← Measures left/right sliding
+         |
 ```
 
-Middle motors are used for encoder readings — they have the most consistent ground contact and are least affected by turning scrub.
+The two tracking wheels are mounted in a cross pattern. Rotation angle comes entirely from the IMU.
+This scheme is superior to parallel dual wheels because it **detects lateral sliding** (accurate tracking even when pushed sideways by opponents).
 
 ---
 
 ## 4. Layer-by-Layer Design
 
-### 4.1 Config
+### 4.1 Configuration Layer
 
-**Files:** `include/config.h`
+**File:** `include/config.h`
 
-A single header file with all tunable constants, organized by robot configuration. The file uses compile-time `#ifdef` guards to select one configuration, with a build-time error if none or both are selected.
+A single header containing all tunable parameters, centralized for quick field-side adjustment.
 
-**Shared constants** (same for all configs):
+**Parameter Groups:**
 
-| Constant | What it means |
-|----------|---------------|
-| `WHEEL_CIRCUMFERENCE` | Derived: π × diameter (auto-calculated) |
-| `LOOP_INTERVAL_MS` | Control loop period (10 ms) |
+| Group | Key Constants | Purpose |
+|-------|---------------|---------|
+| 1. Physical | `WHEEL_DIAMETER` (0.08255 m), `WHEEL_TRACK` (0.33 m), `TICKS_PER_REV` (300) | Drive wheel dimensions |
+| 2. Motor Ports | `LEFT_FRONT_MOTOR_PORT` … `RIGHT_REAR_MOTOR_PORT`, `MOTORS_PER_SIDE` (3) | 6-motor assignment |
+| 3. IMU | `IMU_PORT` (10), `IMU_FUSION_ALPHA` (0.98, reserved) | Inertial sensor |
+| 4. Tracking Wheels | `FORWARD/LATERAL_TRACKING_PORT`, `TRACKING_WHEEL_DIAMETER` (0.06985 m), `FORWARD/LATERAL_WHEEL_OFFSET` | Perpendicular dual-wheel scheme |
+| 5. Turn PID | `TURN_KP` (3.5) / `KI` (0.02) / `KD` (0.25), anti-windup, D-filter | In-place turning |
+| 6. Drive | `DRIVE_KP` (8.0) / `KI` (0.05) / `KD` (0.5), tolerance, timeout | Linear driving |
+| 7. Motion Profile | `MAX_VELOCITY` (1.2 m/s), `MAX_ACCELERATION` (3.0 m/s²), `BOOMERANG_LEAD` (0.6) | Velocity curve + Boomerang |
+| 8. Loop Interval | `LOOP_INTERVAL_MS` (10) | 100 Hz |
+| 9. Logging | `LOG_VERBOSITY` (2) | Debug output level |
+| 10. Vision | `VISION_PORT` (11), focal length, tag size, confidence threshold, correction gain | AprilTag localization |
 
-**Per-configuration constants** (each config defines its own):
-
-| Constant | 2-Motor Value | 6-Motor Value |
-|----------|---------------|---------------|
-| `WHEEL_DIAMETER` | 0.1016 m (4") | 0.08255 m (3.25") |
-| `WHEEL_TRACK` | 0.381 m (15") | 0.330 m (13") |
-| `TICKS_PER_REV` | 360 (green) | 300 (blue) |
-| `TURN_KP/KI/KD` | 2.0 / 0.0 / 0.1 | 3.5 / 0.02 / 0.25 |
-| `DRIVE_KP/KI/KD` | 5.0 / 0.0 / 0.3 | 8.0 / 0.05 / 0.5 |
-| `MAX_VELOCITY` | 0.8 m/s | 1.2 m/s |
-| `MAX_ACCELERATION` | 1.5 m/s² | 3.0 m/s² |
-| `MOTORS_PER_SIDE` | 1 | 3 |
-| `DRIVE_INTEGRAL_LIMIT` | — | 5.0 (anti-windup) |
-| `DRIVE_D_FILTER` | — | 0.7 (derivative EMA) |
-| `TURN_INTEGRAL_LIMIT` | — | 3.0 (anti-windup) |
-| `TURN_D_FILTER` | — | 0.5 (derivative EMA) |
-| `BOOMERANG_LEAD` | — | 0.6 (carrot lead factor) |
-
-**Why one file?** When you're tuning your robot at a competition, you want ONE place to change numbers, not hunting through 10 files.
+**Why one file?** At competition, you only need to visit one place to change numbers — no searching through 10 files.
 
 ---
 
-### 4.2 HAL — Hardware Abstraction Layer
+### 4.2 Hardware Abstraction Layer (HAL)
 
 **Files:**
-- `include/hal/motors.h` + `src/hal/motors.cpp`
-- `include/hal/imu.h` + `src/hal/imu.cpp`
-- `include/hal/time.h` + `src/hal/time.cpp`
+- `include/hal/motors.h` + `src/hal/motors.cpp` — Motor control
+- `include/hal/imu.h` + `src/hal/imu.cpp` — Inertial sensor
+- `include/hal/time.h` + `src/hal/time.cpp` — Time functions
+- `include/hal/tracking_wheels.h` + `src/hal/tracking_wheels.cpp` — Tracking wheel sensors
+- `include/hal/vision.h` + `src/hal/vision.cpp` — AI Vision sensor
+- `include/hal/hal_log.h` + `src/hal/hal_log.cpp` — Logging system
 
-The HAL is a thin wrapper around VEX hardware. It provides simple functions that hide the VEX-specific API:
+The HAL is a thin wrapper around VEX hardware. It provides simple functions that hide VEX-specific APIs:
 
 ```
 VEX API (complex)              HAL (simple)
-─────────────────               ────────────
-motor.spin(fwd, 8, volt)  →    set_drive_motors(8.0, 8.0)
-motor.stop(brake)          →    stop_drive_motors()
-motor.position(degrees)    →    get_left_encoder_ticks()
-inertial.heading(degrees)  →    get_imu_heading_rad()
+──────────────                 ────────────
+motor.spin(fwd, 8, volt)  →   set_drive_motors(8.0, 8.0)
+motor.stop(brake)          →   stop_drive_motors()
+inertial.heading(degrees)  →   get_imu_heading_rad()
+rotation.position(degrees) →   tracking_get_forward_distance_m()
 ```
 
-**Key functions:**
+**Core Functions:**
 
-| Module | Function | What it does |
-|--------|----------|-------------|
-| motors | `set_drive_motors(left_v, right_v)` | Set left/right motor voltages (-12 to +12) |
-| motors | `stop_drive_motors()` | Stop both motors with brake |
+| Module | Function | Purpose |
+|--------|----------|---------|
+| motors | `set_drive_motors(left_v, right_v)` | Set left/right motor voltage (-12 to +12) |
+| motors | `stop_drive_motors()` | Brake-stop all motors |
 | motors | `get_left_encoder_ticks()` | Read left wheel encoder |
 | motors | `get_right_encoder_ticks()` | Read right wheel encoder |
-| motors | `reset_encoders()` | Zero both encoders |
-| imu | `get_imu_heading_rad()` | Current heading in radians [0, 2π) |
-| imu | `get_imu_rotation_rad()` | Unbounded rotation (can go past 2π) |
-| imu | `calibrate_imu()` | Calibrate and wait until done |
-| imu | `reset_imu()` | Zero the heading |
-| time | `get_time_sec()` | Current time in seconds |
-| time | `get_time_ms()` | Current time in milliseconds |
-| time | `wait_ms(ms)` | Sleep for some milliseconds |
+| motors | `reset_encoders()` | Zero encoders |
+| imu | `get_imu_heading_rad()` | Current heading (radians) [0, 2π) |
+| imu | `get_imu_rotation_rad()` | Unbounded rotation (can exceed 2π) |
+| imu | `calibrate_imu()` | Calibrate IMU and wait |
+| imu | `reset_imu()` | Zero heading |
+| tracking | `tracking_get_forward_distance_m()` | Forward tracking wheel cumulative distance (meters) |
+| tracking | `tracking_get_lateral_distance_m()` | Lateral tracking wheel cumulative distance (meters) |
+| tracking | `tracking_wheels_reset()` | Zero tracking wheel readings |
+| tracking | `tracking_wheels_connected()` | Check if tracking wheels are connected |
+| time | `get_time_sec()` / `get_time_ms()` | Current time |
+| time | `wait_ms(ms)` | Sleep for milliseconds |
+| vision | `vision_detect_apriltags()` | Detect AprilTag markers |
+| log | `hal_log(msg)` | Output log to terminal and SD card |
 
-**Design decision:** Motor voltages are clamped to [-12, +12] inside the HAL, so upper layers don't need to worry about exceeding hardware limits.
-
-**Multi-motor transparency:** In the 6-motor config, `set_drive_motors()` sends the same voltage to all 3 motors on a side. `get_left_encoder_ticks()` reads from the designated primary encoder (middle motor). The API signature is identical — callers never know how many physical motors exist.
+**Design Decisions:**
+- Motor voltage is clamped to [-12, +12] inside the HAL — callers don't worry about exceeding hardware limits
+- `set_drive_motors()` sends the same voltage to all 3 motors on one side (caller doesn't need to know motor count)
+- Tracking wheel functions automatically convert rotation sensor angles to meters (using `TRACKING_WHEEL_CIRCUMFERENCE`)
 
 ---
 
@@ -202,37 +199,108 @@ inertial.heading(degrees)  →    get_imu_heading_rad()
 
 **Files:** `include/localization/odometry.h` + `src/localization/odometry.cpp`
 
-Odometry answers the question: **"Where is my robot on the field?"**
+Odometry answers: **"Where is my robot on the field?"**
 
 It tracks the robot's **Pose** — a combination of position and heading:
 
 ```
 Pose = { x, y, θ }
          ↑  ↑  ↑
-         │  │  └── heading angle (radians, 0 = facing right / +X)
-         │  └───── Y position (meters, forward from start)
-         └──────── X position (meters, right from start)
+         │  │  └── Heading angle (radians, 0 = facing right/+X)
+         │  └───── Y position (meters, left is positive)
+         └──────── X position (meters, forward is positive)
 ```
 
-**How it works (step by step):**
+**How It Works (Perpendicular Dual-Wheel Scheme, Step by Step):**
 
-1. **Read encoders** — get the total ticks for left and right wheels
-2. **Compute delta ticks** — subtract previous reading to get change since last update
-3. **Convert to meters** — `delta_meters = delta_ticks × (wheel_circumference / ticks_per_rev)`
-4. **Compute robot motion:**
-   - Linear distance: `d = (d_left + d_right) / 2`
-   - Heading change from encoders: `dθ_enc = (d_right - d_left) / wheel_track`
-5. **Fuse with IMU** — blend encoder heading with IMU heading:
-   - **2-motor** (absolute fusion): `θ = α × θ_imu + (1-α) × θ_encoder` where α = 0.98
-   - **6-motor** (delta fusion): `Δθ = α × Δθ_imu + (1-α) × Δθ_encoder`
-     Uses `get_imu_rotation_rad()` deltas instead of absolute `heading()` to avoid the catastrophic 0°/360° wrap-around bug that occurs near heading boundaries.
-6. **Update position** using midpoint approximation:
-   - `x += d × cos(θ_mid)`
-   - `y += d × sin(θ_mid)`
+1. **Read sensors** — get forward wheel distance, lateral wheel distance, and IMU rotation
+2. **Compute deltas** — subtract previous readings to get changes since last update:
+   - `Δforward` (how far the forward wheel moved)
+   - `Δlateral` (how far the lateral wheel slid)
+   - `Δθ` (how much the IMU measured rotation, **100% from IMU**)
+3. **Compensate rotation arcs** — tracking wheels offset from the rotation center trace arcs during rotation, not true translation:
+   - `Δforward_corrected = Δforward - FORWARD_WHEEL_OFFSET × Δθ`
+   - `Δlateral_corrected = Δlateral - LATERAL_WHEEL_OFFSET × Δθ`
+4. **Transform to global coordinates** using midpoint approximation:
+   - `mid_θ = θ + Δθ/2`
+   - `x += Δforward × cos(mid_θ) - Δlateral × sin(mid_θ)`
+   - `y += Δforward × sin(mid_θ) + Δlateral × cos(mid_θ)`
+   - `θ += Δθ`
 
-**Why IMU fusion?** Encoders drift when wheels slip. The IMU doesn't slip, but it drifts slowly over time. Combining both gives the best accuracy.
+**Why tracking wheels instead of drive wheel encoders?** Drive wheels slip during acceleration, turning, and collisions — encoder readings become inaccurate. Tracking wheels are unpowered, don't slip, and measure more precisely.
 
-**Why delta fusion for 6-motor?** The 2-motor absolute fusion (`α × heading + (1-α) × encoder`) works fine at low speeds but has a critical flaw: when heading crosses 0°/360° (≈ 0/2π radians), the weighted average produces nonsensical jumps (e.g., `0.98 × 0.01 + 0.02 × 6.27 ≈ 0.14` instead of the correct `≈ 0.01`). Delta fusion avoids this entirely by fusing heading *changes*, which are always small.
+**Why 100% IMU for heading?** The perpendicular scheme has one forward wheel and one lateral wheel — it cannot compute rotation from wheel difference like parallel dual wheels. The IMU is extremely accurate short-term and the best heading source.
+
+#### Vision Localization — AI Vision Sensor Absolute Position Correction
+
+**Files:**
+- `include/hal/vision.h` + `src/hal/vision.cpp`
+- `include/localization/vision_localizer.h` + `src/localization/vision_localizer.cpp`
+
+The vision system uses the **V5 AI Vision Sensor** to detect **AprilTag** markers at known field positions, providing **absolute position correction** that complements the tracking wheels' relative positioning.
+
+**Tracking Wheels vs AI Vision (complementary — we use both):**
+
+| | Tracking Wheels | AI Vision |
+|---|---|---|
+| Positioning type | Relative (accumulates drift) | **Absolute (resets drift)** |
+| Update rate | 100 Hz (very fast) | 20 Hz (slower) |
+| Accuracy source | Wheel-to-ground contact quality | Tag visibility + distance |
+| Collision resilience | Collision may shift wheels | **No physical alignment needed** |
+
+**How It Works:**
+
+```
+AprilTag on field (known position)
+        │
+        ▼
+   ┌────────────────┐
+   │  AI Vision     │  ← Detect tag → pixel coordinates + size
+   │  Sensor (HAL)  │
+   └────────────────┘
+        │
+        ▼
+   ┌────────────────┐
+   │  Vision        │  ← Pinhole camera model → distance + bearing
+   │  Localizer     │  ← Known tag position → robot absolute coords
+   └────────────────┘
+        │
+        ▼
+   Complementary filter fusion into odometry
+   pose = (1-α) × odom + α×confidence × vision
+```
+
+**Step-by-step algorithm:**
+
+1. **Capture snapshot** — AI Vision Sensor detects AprilTags in field of view
+2. **Distance estimation** — pinhole camera model: `distance = (actual_tag_size × focal_length) / pixel_size`
+3. **Bearing estimation** — from horizontal pixel offset: `bearing = atan(pixel_offset / focal_length)`
+4. **Coordinate transform** — known tag field coords + distance + bearing → robot field coords
+5. **Confidence scoring** — based on distance and tag size: close + large tag → high confidence
+6. **Complementary filter fusion** — weighted blend into odometry estimate by confidence
+
+**Safety mechanisms:**
+- Detections below `VISION_MIN_CONFIDENCE` are discarded
+- Corrections exceeding `VISION_MAX_CORRECTION_M` (30 cm) are rejected (likely misdetection)
+- Heading always comes from IMU (more reliable than vision)
+- Uses `set_pose_no_reset()` to adjust pose without breaking encoder delta tracking
+
+**Example field tag layout (12 ft × 12 ft field):**
+
+```
+  ┌───────────────────────────────────┐
+  │              +y wall              │
+  │  Tag7                      Tag8  │
+  │                                  │
+  │  Tag3                      Tag4  │
+  │ +x wall                  -x wall │
+  │  Tag1                      Tag2  │
+  │                                  │
+  │  Tag5                      Tag6  │
+  │              -y wall              │
+  └───────────────────────────────────┘
+     Origin (0, 0) = bottom-left
+```
 
 ---
 
@@ -244,254 +312,263 @@ Pose = { x, y, θ }
 
 #### PID Controller
 
-A PID controller is like a smart thermostat. It continuously adjusts output to reach a target:
+A PID controller is like a smart thermostat, continuously adjusting output to reach a target:
 
 ```
-Error = Target - Current
+error = target - current
 
-Output = Kp × Error          ← Proportional: "How far off am I?"
-       + Ki × ∫Error × dt    ← Integral:     "Have I been off for a long time?"
-       + Kd × dError/dt      ← Derivative:   "Am I getting closer or further?"
+output = Kp × error              ← Proportional: "How far off am I?"
+       + Ki × ∫error × dt        ← Integral: "How long have I been off?"
+       + Kd × d(error)/dt        ← Derivative: "Am I getting closer or further?"
 ```
 
-**Analogy:** Imagine driving a car toward a traffic light:
-- **P** (Proportional): The farther away, the harder you press the gas → might overshoot
-- **I** (Integral): If you've been too far for too long, push harder → eliminates permanent offset
-- **D** (Derivative): If you're approaching fast, start braking → reduces overshoot
+**Analogy:** Imagine driving toward a traffic light:
+- **P** (Proportional): The further away, the harder you press the gas → might overshoot
+- **I** (Integral): If you've been off-target for a while, push harder → eliminates steady-state error
+- **D** (Derivative): If approaching too fast, start braking → reduces overshoot
 
-**Optional enhancements** (6-motor config activates all three):
+**Enhancements:**
 
-| Enhancement | Method | What it does |
-|-------------|--------|-------------|
-| **Anti-windup** | `set_integral_limit(limit)` | Clamps `∫error·dt` to ±limit, preventing integral explosion when motors are saturated (e.g., during pushing matches) |
-| **Derivative EMA filter** | `set_d_filter(alpha)` | Low-pass filter: `filtered = α×prev + (1-α)×raw`. Smooths noisy derivative spikes without adding phase lag. alpha=0 disables |
-| **Output clamping** | `set_output_limit(limit)` | Symmetric ±limit clamp on final output. Prevents commanding voltages beyond hardware capability |
+| Enhancement | Method | Purpose |
+|-------------|--------|---------|
+| **Anti-windup** | `set_integral_limit(limit)` | Clamp integral to ±limit, preventing integral explosion during motor saturation |
+| **Derivative EMA filter** | `set_d_filter(alpha)` | Low-pass: `filtered = α×prev + (1-α)×raw`. Smooths derivative noise spikes. alpha=0 disables |
+| **Output clamping** | `set_output_limit(limit)` | Symmetric ±limit output clamp. Prevents commands exceeding hardware capability |
 
-All three are **disabled by default** (set to 0). The 2-motor config runs PID in basic mode for simplicity. The 6-motor motion code calls the setters after `reset()` to activate competition-grade behavior.
+Motion code calls setters after `reset()` to activate competition-grade behavior (turn PID uses anti-windup 3.0, D-filter 0.5, output clamp 12V).
 
 ---
 
 #### Motion Profile
 
-Instead of going from 0 to max speed instantly (which causes wheel slip and jerky motion), we use a **trapezoidal velocity profile**:
+Instead of jumping instantly from 0 to max speed (causing wheel slip and jerky motion), we use a **trapezoidal velocity profile**:
 
 ```
-velocity
+Velocity
 ▲
 │    ┌────────────┐
 │   /              \
 │  /                \
 │ /                  \
-└──────────────────────── time
-  accel   cruise  decel
+└──────────────────────── Time
+  Accel    Cruise    Decel
 ```
 
-At each moment, target velocity = min(acceleration_limit, max_velocity, deceleration_limit):
+At each moment, target velocity = min(acceleration limit, max velocity, deceleration limit):
 
-1. **Acceleration limit**: `v = a × t` — can't speed up too fast
-2. **Max velocity cap**: `v = v_max` — can't go faster than top speed
+1. **Acceleration limit**: `v = a × t` — can't accelerate too fast
+2. **Max velocity cap**: `v = v_max` — can't exceed top speed
 3. **Deceleration limit**: `v = √(2 × a × d)` — must be able to stop in time
 
-The smallest of these three constraints wins.
+The smallest of the three constraints wins.
 
 ---
 
-### 4.5 Motion — High-level Commands
+### 4.5 Motion — High-Level Commands
 
 **Files:**
 - `include/motion/turn_to_heading.h` + `src/motion/turn_to_heading.cpp`
 - `include/motion/drive_to_pose.h` + `src/motion/drive_to_pose.cpp`
 
-#### turn_to_heading
+#### In-Place Turn (turn_to_heading)
 
-Turns the robot in place to face a specific direction. Uses PID control on the heading error.
+Rotates the robot in place to a specified heading. Uses PID to control heading error.
 
 **Algorithm:**
 1. Compute heading error = target − current
-2. Normalize to [-π, +π] (always turn the short way)
-3. PID → angular velocity → differential wheel voltages
-4. Exit when error stays small for `TURN_SETTLE_TIME_MS`, or timeout
+2. Normalize to [-π, +π] (always take the short way)
+3. PID → angular velocity → differential wheel voltage
+4. Exit when error stays small for `TURN_SETTLE_TIME_MS`, or on timeout
 
-**6-motor enhancement:** After `reset()`, the turn PID activates anti-windup (`TURN_INTEGRAL_LIMIT`), derivative filter (`TURN_D_FILTER`), and output clamping (12V) for smoother, more precise turns with the higher-torque drivetrain.
+Turn PID activates anti-windup (`TURN_INTEGRAL_LIMIT`), derivative filter (`TURN_D_FILTER`), and output clamping (12V) for smoother, more precise turning on high-torque drivetrains.
 
-**Exit conditions (why both?):**
-- **Settle time**: Ensures the robot has actually stopped, not just passing through the target
-- **Timeout**: Safety net — if something goes wrong, don't spin forever
+**Exit conditions (why two?):**
+- **Settle time**: Ensures the robot actually stopped, not just passing through the target
+- **Timeout**: Safety net — don't spin forever if something goes wrong
 
 ---
 
-#### drive_to_pose
+#### Drive to Pose (drive_to_pose) — Boomerang Controller
 
-Drives the robot to a specific (x, y, θ) pose. The strategy differs by configuration:
+Drives the robot to a specified (x, y, θ) pose on the field. Uses the **Boomerang controller** for smooth curved approach.
 
-**2-motor — Turn-then-drive** (entry-level):
-1. **Phase 1 — Turn**: Rotate in place to face the target point
-2. **Phase 2 — Drive**: Move forward with motion-profiled velocity + heading correction
+Instead of stopping to turn, it places a "carrot" lead point behind the target along its heading vector. The robot aims at the carrot; as distance shrinks, the carrot converges to the target, producing a smooth curved approach with correct final heading.
 
 ```
-         Target (x, y)
-            ●
-           /
-          /  ← Phase 2: drive forward
-         /
-        /
-    ●──→    ← Phase 1: turn to face target
-  Start
-```
-
-**6-motor — Boomerang controller** (competition-grade):
-Instead of stopping to turn, a "carrot" point is placed behind the target along its heading vector. The robot aims at the carrot; as distance shrinks, the carrot converges to the target, producing a smooth curved approach that arrives at the correct final heading.
-
-```
-         carrot ◀── lead ──── Target
+         Carrot ◀── lead ──── Target
            ╱                     ↑ θ_final
         Robot
 ```
 
 **Boomerang features:**
 - Smooth curved approach — no intermediate stops
-- Final heading control — arrives facing the desired direction
+- Final heading control — arrive facing the desired direction
 - Reverse driving support (`reverse=true` parameter)
-- Cosine throttle — slows down when heading error is large
-- Acceleration slew rate limiting — prevents wheel slip
-- Full angular PID with anti-windup, D-filter, and output clamping
+- Cosine scaling — slows down when heading error is large
+- Slew rate limiting — prevents wheel slip
+- Full heading PID with anti-windup, D-filter, and output clamping
 
 ---
 
-### 4.6 Main — Application Entry
+### 4.6 Main Program Entry
 
 **File:** `src/main.cpp`
 
-The entry point glues everything together. It uses `#ifdef` to create the correct motor objects for the selected configuration:
+The entry program glues everything together:
 
-- **2-motor**: 2 motors → `LeftDriveSmart`, `RightDriveSmart`
-- **6-motor**: 6 motors → `LeftFront/Mid/Rear`, `RightFront/Mid/Rear` (blue cartridge, left side reversed)
+- **Hardware declarations**:
+  - 6 drive motors → `LeftFront/Mid/Rear`, `RightFront/Mid/Rear` (blue gearbox, left side reversed)
+  - IMU → `DrivetrainInertial`
+  - Tracking wheels → `ForwardTrackingSensor`, `LateralTrackingSensor`
+  - AI Vision → `VisionSensor`
+- **Background tasks**: screen display, logging
+- **Competition callbacks**: `pre_auton()`, `autonomous()`, `usercontrol()`
 
-Note: motor `reverse` flags in the 6-motor config account for physical mounting direction — left-side motors face opposite to right-side motors.
+Note: Left-side motors have the `reverse` flag set due to physical mounting orientation — left motors face opposite to right motors.
 
 ---
 
 ## 5. Data Flow
 
-Here's how data flows through the system during autonomous:
+Here is how data flows through the system during autonomous mode:
 
 ```
-Encoders + IMU
-      │
-      ▼
-  ┌────────────┐
-  │  Odometry   │──→ Pose {x, y, θ}
-  └────────────┘         │
-                         ▼
+Tracking Wheels + IMU            AI Vision Sensor
+      │                                │
+      ▼                                ▼
+  ┌────────────┐            ┌──────────────────┐
+  │  Odometry  │──→ Pose ←──│  Vision          │
+  │ (100 Hz)   │   {x,y,θ}  │  Localizer       │
+  └────────────┘      │      │  (20 Hz, abs.)   │
+                      │      └──────────────────┘
+                      │         Complementary ↑
+                      │         filter fusion
+                      ▼
               ┌──────────────────┐
-              │  drive_to_pose   │
-              │  or              │
+              │   drive_to_pose  │
+              │   or             │
               │  turn_to_heading │
               └──────────────────┘
                     │         │
           ┌─────────┘         └──────────┐
           ▼                              ▼
    ┌──────────────┐              ┌──────────────┐
-   │MotionProfile │              │     PID      │
-   │(target vel)  │              │(correction)  │
+   │ Motion       │              │     PID      │
+   │ Profile      │              │ (correction) │
+   │ (target vel) │              │              │
    └──────────────┘              └──────────────┘
           │                              │
           └──────────┬───────────────────┘
                      ▼
               ┌──────────────┐
-              │  HAL Motors  │──→ Wheel voltages
+              │  HAL Motors  │──→ Wheel voltage
               └──────────────┘
 ```
 
 ---
 
-## 6. Key Algorithms
+## 6. Core Algorithms
 
 ### Angle Normalization
 
-When computing the difference between two angles, the result must be in [-π, +π] so the robot always turns the shortest way:
+When computing the difference between two angles, the result must be in [-π, +π] to ensure the robot always takes the shortest path:
 
 ```cpp
 error = atan2(sin(error), cos(error));
 ```
 
-Without this, turning from 350° to 10° would go the long way (340° turn) instead of the short way (20° turn).
+Without this, turning from 350° to 10° would go the long way (340°) instead of the short way (20°).
+
+---
+
+### Perpendicular Dual-Wheel Odometry
+
+Unlike traditional differential odometry (which computes rotation from left/right wheel difference), the perpendicular scheme directly measures displacement along two independent axes:
+
+```
+Inputs:
+  Δfwd  = forward wheel displacement delta
+  Δlat  = lateral wheel displacement delta
+  Δθ    = IMU rotation delta
+
+Compensate rotation arcs (off-center wheels trace arcs):
+  Δfwd_c = Δfwd - FORWARD_WHEEL_OFFSET × Δθ
+  Δlat_c = Δlat - LATERAL_WHEEL_OFFSET × Δθ
+
+Global coordinate update (midpoint approximation):
+  mid_θ = θ + Δθ/2
+  x += Δfwd_c × cos(mid_θ) - Δlat_c × sin(mid_θ)
+  y += Δfwd_c × sin(mid_θ) + Δlat_c × cos(mid_θ)
+  θ += Δθ
+```
 
 ---
 
 ### Differential Drive Kinematics
 
-Converting between wheel velocities and robot motion:
+Conversion between wheel speeds and robot motion:
 
 ```
-Forward:                    Inverse:
-v = (v_R + v_L) / 2        v_L = v - ω × W/2
-ω = (v_R - v_L) / W        v_R = v + ω × W/2
+Forward:                      Inverse:
+v = (v_right + v_left) / 2    v_left  = v - ω × W/2
+ω = (v_right - v_left) / W    v_right = v + ω × W/2
 
 Where:
-  v   = linear velocity (m/s)
-  ω   = angular velocity (rad/s)
-  W   = wheel track width (m)
-  v_L = left wheel velocity
-  v_R = right wheel velocity
+  v      = linear velocity (m/s)
+  ω      = angular velocity (rad/s)
+  W      = wheel track (m)
+  v_left = left wheel speed
+  v_right = right wheel speed
 ```
 
 ---
 
-## 7. Architecture Strengths Demonstrated
+## 7. Architecture Strengths
 
-The 6-motor configuration proves the architecture works as designed:
+### Modularity (one responsibility per file)
+- HAL encapsulates hardware details — swap sensors by changing HAL only, upper code untouched
+- PID and motion profile are generic algorithms — no dependency on specific robot configuration
+- Odometry only cares about "where is the pose", not "who reads the sensors"
 
-### Flexibility (adapt to different hardware)
-- Switching from 2 motors to 6 motors requires changing **config-specific `#ifdef` blocks** in a handful of files
-- A single `#define` in `config.h` selects the entire configuration
-- Compile-time guards prevent invalid combinations
-- Config-specific behaviors (Boomerang, delta fusion) are isolated in `#ifdef`/`#else` blocks — the 2-motor code path is always preserved unchanged
-
-### Reusability (same code, different robots)
-- `PIDController` class works identically for both configs — only the *gains* and optional enhancements differ
-- `MotionProfile` works unchanged — only `MAX_VELOCITY` and `MAX_ACCELERATION` differ
-- HAL APIs (`get_left_encoder_ticks()`, `set_drive_motors()`) hide all multi-motor complexity
-- Odometry, drive_to_pose, and turn_to_heading share the same API — config-specific behavior is selected at compile time
-
-### Extendability (easy to add more)
-- Adding an 8-motor config (e.g., mecanum) follows the same pattern:
-  1. Add `#define ROBOT_8MOTOR` section in `config.h`
-  2. Add motor control logic in `motors.cpp`
-  3. Add motor declarations in `main.cpp`
-  4. All other files remain untouched
-- Adding subsystems (intake, catapult, pneumatics) follows the same HAL pattern
+### Testability (test without hardware)
+- 24 host-side unit tests covering PID, motion profile, odometry
+- Mock HAL simulates all sensors — tests run on your computer in 0.1 seconds
+- Run `make test` after every code change for instant verification
 
 ### Separation of Concerns
 ```
-  What changes           Where it lives         What DOESN'T change
-  ─────────────          ──────────────         ─────────────────────
-  Number of motors   →   motors.cpp              PID algorithm
-  Motor ports        →   config.h                Odometry math
-  Wheel dimensions   →   config.h                Motion profiling
-  PID gains          →   config.h                Drive-to-pose logic
-  Cartridge type     →   main.cpp                Turn-to-heading logic
+  What changes           Where              What stays the same
+  ─────────────        ──────────────      ───────────────────
+  Motor ports      →   config.h            PID algorithm
+  Wheel size       →   config.h            Odometry math
+  PID gains        →   config.h            Motion profiling
+  Tracking offsets →   config.h            Drive-to-pose logic
+  Sensor type      →   hal/*.cpp           Turn-to-heading logic
 ```
+
+### Easy to Extend
+- Adding subsystems (intake, lift, pneumatics) follows the same HAL pattern
+- Adding new localization sources (e.g., GPS) just means implementing a new localizer module and fusing into odometry
 
 ---
 
 ## 8. Future Roadmap
 
-This codebase is designed to grow. Here are natural next steps, ordered by impact:
-
 | Priority | Feature | Difficulty | Status |
 |----------|---------|------------|--------|
-| 1 | **PID tuning on the real robot** | Easy | Ongoing — tune on field |
-| 2 | **Add mechanisms** (intake, lift, clamp) | Easy | Next step |
-| ~~3~~ | ~~**Anti-windup for PID**~~ | ~~Medium~~ | ✅ Done — `set_integral_limit()` |
-| ~~3b~~ | ~~**Derivative filter for PID**~~ | ~~Easy~~ | ✅ Done — `set_d_filter()` |
-| ~~3c~~ | ~~**Output clamping for PID**~~ | ~~Easy~~ | ✅ Done — `set_output_limit()` |
-| ~~4~~ | ~~**IMU heading wrap-around fix**~~ | ~~Medium~~ | ✅ Done — delta-based IMU fusion (6M) |
-| ~~5~~ | ~~**Curved path following**~~ | ~~Hard~~ | ✅ Done — Boomerang controller (6M) |
-| 6 | **Tracking wheels** for odometry | Medium | Future — more accurate positioning |
-| 7 | **S-curve motion profile** | Medium | Future — jerk-limited motion |
-| 8 | **Kalman filter** for localization | Hard | Future — optimal sensor fusion |
-| 9 | **Vision sensor integration** | Hard | Future — absolute position fixes |
+| 1 | **Tune PID on real robot** | Easy | Ongoing |
+| 2 | **Add mechanisms** (intake, lift, clamp) | Easy | Next |
+| ~~3~~ | ~~**PID anti-windup**~~ | ~~Medium~~ | ✅ Done — `set_integral_limit()` |
+| ~~3b~~ | ~~**PID derivative filter**~~ | ~~Easy~~ | ✅ Done — `set_d_filter()` |
+| ~~3c~~ | ~~**PID output clamping**~~ | ~~Easy~~ | ✅ Done — `set_output_limit()` |
+| ~~4~~ | ~~**IMU heading wraparound fix**~~ | ~~Medium~~ | ✅ Done — delta-based IMU |
+| ~~5~~ | ~~**Curved path following**~~ | ~~Hard~~ | ✅ Done — Boomerang controller |
+| ~~6~~ | ~~**Tracking wheel localization**~~ | ~~Medium~~ | ✅ Done — perpendicular dual-wheel (forward + lateral) |
+| ~~7~~ | ~~**Absolute position localization**~~ | ~~Hard~~ | ✅ Done — AI Vision AprilTag localization |
+| 8 | **S-curve motion profile** | Medium | Future — jerk limiting |
+| 9 | **Multi-tag triangulation** | Medium | Future — simultaneous multi-tag detection |
+| 10 | **Vision heading correction** | Medium | Future — estimate heading from tag angle |
+| 11 | **Kalman filter** localization | Hard | Future — optimal multi-sensor fusion |
 
 ---
 
@@ -500,28 +577,32 @@ This codebase is designed to grow. Here are natural next steps, ordered by impac
 ```
 v5competition1/
 ├── include/
-│   ├── config.h                    ← All tunable constants
+│   ├── config.h                    ← All tunable parameters
 │   ├── vex.h                       ← VEX SDK header
 │   ├── hal/
 │   │   ├── motors.h                ← Motor functions
 │   │   ├── imu.h                   ← IMU functions
-│   │   └── time.h                  ← Time functions
+│   │   ├── time.h                  ← Time functions
+│   │   ├── tracking_wheels.h       ← Tracking wheel functions
+│   │   ├── vision.h                ← AI Vision sensor functions
+│   │   └── hal_log.h               ← Logging system
 │   ├── localization/
-│   │   └── odometry.h              ← Position tracking
+│   │   ├── odometry.h              ← Position tracking (tracking wheels + IMU)
+│   │   └── vision_localizer.h      ← Vision absolute localization
 │   ├── control/
 │   │   ├── pid.h                   ← PID controller
-│   │   └── motion_profile.h        ← Velocity planner
+│   │   └── motion_profile.h        ← Velocity planning
 │   └── motion/
 │       ├── turn_to_heading.h       ← Turn command
-│       └── drive_to_pose.h         ← Drive command
+│       └── drive_to_pose.h         ← Drive command (Boomerang controller)
 ├── src/
-│   ├── main.cpp                    ← Entry point
+│   ├── main.cpp                    ← Entry program
 │   ├── hal/     (*.cpp)            ← HAL implementations
-│   ├── localization/ (*.cpp)       ← Odometry implementation
+│   ├── localization/ (*.cpp)       ← Odometry + vision localization
 │   ├── control/ (*.cpp)            ← Algorithm implementations
-│   └── motion/  (*.cpp)            ← Command implementations
+│   └── motion/  (*.cpp)            ← Motion command implementations
 ├── test/
-│   └── host_tests.cpp              ← Host-side unit tests
+│   └── host_tests.cpp              ← Host-side unit tests (24 tests)
 └── docs/
     ├── en/                         ← English documentation
     └── cn/                         ← Chinese documentation

@@ -2,11 +2,7 @@
 
 **Complete bill of materials, step-by-step mechanical assembly, and deployment instructions**
 
-> **This guide covers two robot configurations:**
-> - **ROBOT_2MOTOR** — Entry-level, 2 motors, 2 wheels, green cartridge (18:1). Recommended for beginners.
-> - **ROBOT_6MOTOR** — Advanced, 6 motors, 6 wheels, blue cartridge (6:1). Faster, more powerful, competition-ready.
->
-> Parts quantities labeled with **(6M)** are for the 6-motor configuration only. Select one configuration in `config.h` before deploying.
+> **This guide covers the 6-motor differential drivetrain with perpendicular dual tracking wheels, IMU, and AI Vision sensor.** This is the single supported hardware configuration. All constants are defined directly in `config.h` — no `#ifdef` switching required.
 
 ---
 
@@ -19,7 +15,7 @@
    - 1.4 [Fasteners — Screws & Nuts](#14-fasteners--screws--nuts)
    - 1.5 [Spacers & Shaft Collars](#15-spacers--shaft-collars)
    - 1.6 [Bearings](#16-bearings)
-   - 1.7 [Support Wheel](#17-support-wheel)
+   - 1.7 [Tracking Wheels](#17-tracking-wheels)
    - 1.8 [Cable Management](#18-cable-management)
    - 1.9 [Tools Required](#19-tools-required)
 2. [Chassis Dimensions & Layout](#2-chassis-dimensions--layout)
@@ -28,7 +24,7 @@
    - 4.1 [Step 1: Build the Base Frame](#41-step-1-build-the-base-frame)
    - 4.2 [Step 2: Install Drive Shafts & Wheels](#42-step-2-install-drive-shafts--wheels)
    - 4.3 [Step 3: Mount Motors & Gear Train](#43-step-3-mount-motors--gear-train)
-   - 4.4 [Step 4: Mount Support Wheel](#44-step-4-mount-support-wheel)
+   - 4.4 [Step 4: Mount Tracking Wheels](#44-step-4-mount-tracking-wheels)
    - 4.5 [Step 5: Mount the Brain & Battery](#45-step-5-mount-the-brain--battery)
    - 4.6 [Step 6: Mount the IMU](#46-step-6-mount-the-imu)
    - 4.7 [Step 7: Wiring & Cable Management](#47-step-7-wiring--cable-management)
@@ -44,17 +40,19 @@
 
 ### 1.1 Electronics
 
-| # | Part | VEX Part Number | Qty (2M) | Qty (6M) | Notes |
-|---|------|----------------|----------|----------|-------|
-| 1 | V5 Robot Brain | 276-4810 | 1 | 1 | Main controller |
-| 2 | V5 Robot Battery | 276-4811 | 1 | 1 | Li-Ion, charge to >50% before use |
-| 3 | V5 Smart Motor (11W) | 276-4840 | 2 | 6 | **2M:** Green cartridge (18:1, 200 RPM); **6M:** Blue cartridge (6:1, 600 RPM) |
-| 4 | V5 Inertial Sensor (IMU) | 276-4855 | 1 | 1 | Gyro + accelerometer |
-| 5 | V5 Smart Cable (300 mm) | 276-4850 | 2 | 6 | For motors |
-| 6 | V5 Smart Cable (600 mm) | 276-4851 | 1 | 1 | For IMU (longer reach) |
-| 7 | V5 Controller | 276-4820 | 1 | 1 | Wireless or USB tethered |
-| 8 | V5 Battery Charger | 276-4812 | 1 | 1 | For charging between matches |
-| 9 | USB-C Cable | — | 1 | 1 | For uploading code to Brain |
+| # | Part | VEX Part Number | Qty | Notes |
+|---|------|----------------|-----|-------|
+| 1 | V5 Robot Brain | 276-4810 | 1 | Main controller |
+| 2 | V5 Robot Battery | 276-4811 | 1 | Li-Ion, charge to >50% before use |
+| 3 | V5 Smart Motor (11W) | 276-4840 | 6 | Blue cartridge (6:1, 600 RPM). Left: Ports 1,2,3 (reversed); Right: Ports 4,5,6 |
+| 4 | V5 Inertial Sensor (IMU) | 276-4855 | 1 | Gyro + accelerometer, Port 10 |
+| 5 | V5 Rotation Sensor | 276-4856 | 2 | Forward tracking wheel (Port 8) + Lateral tracking wheel (Port 9) |
+| 6 | V5 AI Vision Sensor | 276-4857 | 1 | Port 12, object detection + color signatures |
+| 7 | V5 Smart Cable (300 mm) | 276-4850 | 6 | For motors |
+| 8 | V5 Smart Cable (600 mm) | 276-4851 | 4 | For IMU, tracking wheels, AI Vision (longer reach) |
+| 9 | V5 Controller | 276-4820 | 1 | Wireless or USB tethered |
+| 10 | V5 Battery Charger | 276-4812 | 1 | For charging between matches |
+| 11 | USB-C Cable | — | 1 | For uploading code to Brain |
 
 ### 1.2 Structural — C-Channels & Beams
 
@@ -76,25 +74,14 @@ Material: 0.040" wall aluminum (VEX standard) unless noted.
 
 ### 1.3 Drivetrain — Wheels, Shafts & Gears
 
-| # | Part | Spec | VEX Part # | Qty (2M) | Qty (6M) | Notes |
-|---|------|------|-----------|----------|----------|-------|
-| 1 | 4" Omni-Directional Wheel | 101.6 mm diameter | 276-3526 | 2 | — | **2M only** — main drive wheels |
-| 1b | 3.25" Omni-Directional Wheel | 82.55 mm diameter | 276-3524 | — | 6 | **6M only** — all 6 drive wheels |
-| 2 | High-Strength (HS) Shaft — 4" | 101.6 mm length, 1/4" square | 276-2293 | 2 | 6 | Drive axles |
-| 3 | High-Strength (HS) Shaft — 2" | 50.8 mm length, 1/4" square | 276-2296 | 2 | — | **(Option A — geared)** Motor-to-gear intermediate shafts |
-| 4 | 60-Tooth High-Strength Gear | Module 0.8, HS bore | 276-2169 | 2 | — | **(Option A — geared)** Driven gear on drive shaft |
-| 5 | 36-Tooth High-Strength Gear | Module 0.8, HS bore | 276-2167 | 2 | — | **(Option A — geared)** Driving gear on motor shaft |
-| 6 | HS Motor Shaft Insert | Adapts motor output to HS shaft | 276-8532 | 2 | 6 | Required whether geared or direct drive |
-| 7 | Standard Shaft — 2" | 50.8 mm, standard 1/8" square | 276-2011 | 1 | — | **2M only** — support wheel axle (6M uses 6 driven wheels, no support wheel needed) |
+| # | Part | Spec | VEX Part # | Qty | Notes |
+|---|------|------|-----------|-----|-------|
+| 1 | 3.25" Omni-Directional Wheel | 82.55 mm diameter | 276-3524 | 6 | All 6 drive wheels |
+| 2 | 2.75" Omni-Directional Wheel | 69.85 mm diameter | 276-3525 | 2 | Tracking wheels (forward + lateral) |
+| 3 | High-Strength (HS) Shaft — 4" | 101.6 mm length, 1/4" square | 276-2293 | 6 | Drive axles (3 per side) |
+| 4 | HS Motor Shaft Insert | Adapts motor output to HS shaft | 276-8532 | 6 | Direct drive — motor inserts directly into drive shaft |
 
-**Drivetrain options:**
-
-| Option | Gear ratio | Effective output | Shafts needed | Gears needed |
-|--------|-----------|-----------------|---------------|-------------|
-| **A — Geared 60:36** | Internal 18:1 × external 60/36 = 30:1 | ~120 RPM, high torque | 2× HS 4" + 2× HS 2" | 2× 60T + 2× 36T |
-| **B — Direct drive** (simplest) | Internal 18:1 only | 200 RPM, moderate torque | 2× HS 4" only | None |
-
-> **Direct drive is recommended for initial testing** — fewer parts, simpler assembly. Switch to geared if you need more pushing power.
+> **This build uses direct drive** (blue cartridge 6:1, 600 RPM) — no external gears. Each motor connects directly to its drive shaft via an HS Motor Shaft Insert.
 
 ### 1.4 Fasteners — Screws & Nuts
 
@@ -134,7 +121,7 @@ Spacers fill gaps between components on shafts. Shaft collars lock shaft positio
 | 4 | Nylon Spacer (large) | 3/8" (9.53 mm) thick | Fits 1/8" shaft | 276-1202 | 4 | Large spacing (rare) |
 | 5 | HS Spacer | 1/8" (3.2 mm) thick | Fits HS 1/4" shaft | 276-2312 | 12 | Gap fill on HS drive shafts |
 | 6 | HS Spacer | 1/4" (6.35 mm) thick | Fits HS 1/4" shaft | 276-2313 | 8 | Larger gaps on HS drive shafts |
-| 7 | Standard Shaft Collar | set-screw clamp | Fits 1/8" shaft | 276-2010 | 4 | Lock standard shafts (support wheel) |
+| 7 | Standard Shaft Collar | set-screw clamp | Fits 1/8" shaft | 276-2010 | 4 | Lock standard shafts (tracking wheels) |
 | 8 | HS Clamping Shaft Collar | set-screw clamp | Fits HS 1/4" shaft | 276-2308 | 4 | Lock HS drive shafts |
 | 9 | Rubber Shaft Collar | friction fit | Fits 1/8" shaft | 276-1204 | 4 | Soft stop / cable clip (optional) |
 
@@ -165,24 +152,25 @@ Bearings let shafts spin freely in metal holes without friction or wobble.
 | # | Part | Type | VEX Part # | Qty | Use |
 |---|------|------|-----------|-----|-----|
 | 1 | HS Bearing Flat | Press-fits into beam hole, HS bore | 276-2310 | 4 | Support HS drive shafts in C-channel walls (2 per shaft) |
-| 2 | Standard Bearing Flat | Press-fits into beam hole, standard bore | 276-1209 | 2 | Support standard shaft for support wheel |
+| 2 | Standard Bearing Flat | Press-fits into beam hole, standard bore | 276-1209 | 2 | Support standard shaft for tracking wheels |
 | 3 | Pillow-Block Bearing (HS) | Bolts to surface, HS bore | 276-2316 | 2 | **(Optional)** Extra shaft support at chassis end |
 
 > **Always use bearings.** Metal-on-metal shaft-in-hole contact wears down the C-channel holes and creates wobble. Press bearings into every hole a shaft passes through.
 
-### 1.7 Support Wheel
+### 1.7 Tracking Wheels
 
-The robot needs a third contact point for stability (2 driven wheels + 1 passive support).
+Two perpendicular tracking wheels (dead wheels) provide high-precision position sensing. They are unpowered 2.75" omni wheels with V5 Rotation Sensors.
 
 | # | Part | Spec | VEX Part # | Qty | Notes |
 |---|------|------|-----------|-----|-------|
-| 1 | 2.75" Omni-Directional Wheel | 69.85 mm diameter | 276-3525 | 1 | Free-spinning rear support, allows sliding during turns |
-| 2 | Standard Shaft — 2" | 50.8 mm, 1/8" square | 276-2011 | 1 | Support wheel axle |
-| 3 | Standard Shaft Collar | set-screw | 276-2010 | 2 | Lock support shaft |
-| 4 | Standard Bearing Flat | standard bore | 276-1209 | 2 | Support shaft in rear cross brace |
-| 5 | Nylon Spacer 1/8" | standard bore | 276-1200 | 2 | Center wheel on shaft |
+| 1 | 2.75" Omni-Directional Wheel | 69.85 mm diameter | 276-3525 | 2 | Forward tracking wheel + Lateral tracking wheel |
+| 2 | V5 Rotation Sensor | 36000 counts/rev | 276-4856 | 2 | One per tracking wheel |
+| 3 | Standard Shaft — 2" | 50.8 mm, 1/8" square | 276-2011 | 2 | Tracking wheel axles |
+| 4 | Standard Shaft Collar | set-screw | 276-2010 | 4 | Lock tracking shafts |
+| 5 | Standard Bearing Flat | standard bore | 276-1209 | 4 | Support tracking shafts |
+| 6 | Nylon Spacer 1/8" | standard bore | 276-1200 | 4 | Center wheels on shafts |
 
-> **3-wheel layout:** Two big drive wheels near rear, one small omni wheel at front-center (or vice-versa). Omni rollers allow free sideways sliding during point turns.
+> **Perpendicular layout (cross pattern):** The forward tracking wheel is aligned with the robot’s forward direction and measures forward/backward displacement. The lateral tracking wheel is perpendicular to it and measures left/right displacement. Heading is 100% from the IMU.
 
 ### 1.8 Cable Management
 
@@ -236,11 +224,10 @@ The robot needs a third contact point for stability (2 driven wheels + 1 passive
    ╠══════════ ╪════════════╪══════════════╣  ──┘
      ▓▓▓▓▓  ──┤            ├──  ▓▓▓▓▓
    L Wheel    Drive Shafts      R Wheel
-   (4" omni)                    (4" omni)
+   (3.25" omni)                    (3.25" omni)
 
-Left 25-hole            ◯             Right 25-hole
-C-channel ═══      Support wheel      C-channel ═══
-                  (2.75" omni)
+Left 25-hole                            Right 25-hole
+C-channel ═══                            C-channel ═══
 ```
 
 ### Side view
@@ -253,16 +240,17 @@ C-channel ═══      Support wheel      C-channel ═══
    ─────────────────┴──────┴──────── ← base frame (C-channel)
    │  Battery (underneath or rear) │
    ──────────────────────────────────
-   ▓▓▓▓  Drive wheels  ▓▓▓▓    ◯  ← support wheel
+   ▓▓▓▓  Drive wheels  ▓▓▓▓
 ```
 
 ### Key measurements for `config.h`
 
-| Measurement | How to measure | 2-Motor value | 6-Motor value | Config constant |
-|------------|---------------|---------------|---------------|-------------------|
-| **Wheel diameter** | Calipers across rubber tread, through center | 101.6 mm → 0.1016 m | 82.55 mm → 0.08255 m | `WHEEL_DIAMETER` |
-| **Wheel track** | Center of left tire contact patch → center of right tire contact patch | ~381 mm → 0.381 m | ~330 mm → 0.330 m | `WHEEL_TRACK` |
-| **Ticks per rev** | Depends on cartridge and gearing | 360 (green, direct) | 300 (blue, direct) | `TICKS_PER_REV` |
+| Measurement | How to measure | Value | Config constant |
+|------------|---------------|-------|-------------------|
+| **Wheel diameter** | Calipers across rubber tread, through center | 82.55 mm → 0.08255 m | `WHEEL_DIAMETER` |
+| **Wheel track** | Center of left tire contact patch → center of right tire contact patch | ~330 mm → 0.330 m | `WHEEL_TRACK` |
+| **Ticks per rev** | Blue cartridge (6:1), direct drive | 300 | `TICKS_PER_REV` |
+| **Tracking wheel diameter** | Calipers across 2.75" omni wheel tread | 69.85 mm → 0.06985 m | `TRACKING_WHEEL_DIAMETER` |
 
 > **Critical:** `WHEEL_TRACK` is **NOT** the outer width of the chassis. It is the distance between where the left and right wheels contact the ground, measured at the center of each tire. Measure this carefully with calipers or a ruler!
 
@@ -365,14 +353,14 @@ VEX gears are Module 0.8:
 
 ### 4.2 Step 2: Install Drive Shafts & Wheels
 
-**Goal:** Two high-strength shafts through the rear of the chassis with 4" omni wheels.
+**Goal:** Six high-strength shafts through the chassis with 3.25" omni wheels (3 per side).
 
 **Parts for this step:**
-- 2× HS Shaft 4"
-- 2× 4" Omni Wheel
-- 4× HS Bearing Flat
-- 4× HS Clamping Shaft Collar
-- ~8× HS Spacer (1/8") for centering
+- 6× HS Shaft 4"
+- 6× 3.25" Omni Wheel
+- 12× HS Bearing Flat
+- 12× HS Clamping Shaft Collar
+- ~24× HS Spacer (1/8") for centering
 
 **Procedure:**
 
@@ -385,7 +373,7 @@ VEX gears are Module 0.8:
    [HS Collar] → [4" Omni Wheel] → | outer wall + bearing | → [HS spacers] → | inner wall + bearing | → [HS Collar]
    ```
 
-4. Attach the **4" omni wheel** to the outer end of each shaft — press the shaft into the wheel's square bore
+4. Attach the **3.25" omni wheel** to the outer end of each shaft — press the shaft into the wheel's square bore
 5. Add HS spacers between inner and outer walls to **take up slack** — the shaft should not slide laterally
 6. Clamp **HS shaft collars** on both sides of each C-channel wall to lock the shaft in position
 
@@ -438,25 +426,27 @@ VEX gears are Module 0.8:
 
 > **Motor orientation:** Both motors mount **mirror-symmetrically** with output shafts pointing inward (toward chassis center). This is why `RightDriveSmart` is constructed with `true` (reversed) in `main.cpp`.
 
-### 4.4 Step 4: Mount Support Wheel
+### 4.4 Step 4: Mount Tracking Wheels
 
-**Goal:** One free-spinning omni wheel at the front or rear center for balance.
+**Goal:** Two perpendicular unpowered tracking wheels with V5 Rotation Sensors for high-precision odometry.
 
 **Parts for this step:**
-- 1× 2.75" Omni Wheel
-- 1× Standard Shaft 2"
-- 2× Standard Bearing Flat
-- 2× Standard Shaft Collar
-- 2× Nylon Spacer 1/8"
+- 2× 2.75" Omni Wheel
+- 2× V5 Rotation Sensor
+- 2× Standard Shaft 2"
+- 4× Standard Bearing Flat
+- 4× Standard Shaft Collar
+- 4× Nylon Spacer 1/8"
+- Spring-loaded mounting brackets (custom or 3D-printed)
 
 **Procedure:**
 
-1. **Choose mounting point:** Center of the front or rear cross brace (the end opposite the drive wheels works best)
-2. Press **2 Standard Bearing Flats** into the cross brace holes, centered
-3. Slide **Standard 2" shaft** through: bearing → 1/8" spacer → 2.75" omni wheel → 1/8" spacer → bearing
-4. Lock with **Standard Shaft Collars** on both sides
+1. **Forward tracking wheel:** Mount one 2.75" omni wheel on a standard shaft, aligned with the robot’s forward direction (rolls when the robot drives forward/backward). Attach a V5 Rotation Sensor to the shaft. Mount near the robot’s center using a spring-loaded bracket so the wheel stays pressed to the ground.
+2. **Lateral tracking wheel:** Mount the second 2.75" omni wheel on a standard shaft, perpendicular to the forward wheel (rolls when the robot slides left/right). Attach its V5 Rotation Sensor. Mount near the robot’s center with a spring-loaded bracket.
+3. Lock each shaft with **Standard Shaft Collars** on both sides.
+4. Connect forward tracking wheel sensor to **Port 8**, lateral to **Port 9**.
 
-**Quality check:** Support wheel spins freely. Robot sits level on all 3 contact points (2 drive + 1 support). Robot doesn't tip in any direction.
+**Quality check:** Both tracking wheels spin freely and stay in firm contact with the ground. When you push the robot forward, only the forward tracking wheel turns. When you slide it sideways, only the lateral tracking wheel turns.
 
 ### 4.5 Step 5: Mount the Brain & Battery
 
@@ -509,25 +499,18 @@ VEX gears are Module 0.8:
 
 **Connect V5 Smart Cables:**
 
-**2-Motor Configuration (ROBOT_2MOTOR):**
-
 | Device | Brain Port | Cable Length | Config Constant |
 |--------|-----------|-------------|-----------------|
-| Left Drive Motor | **Port 1** | 300 mm | `LEFT_MOTOR_PORT = 1` |
-| Inertial Sensor (IMU) | **Port 5** | 600 mm | `IMU_PORT = 5` |
-| Right Drive Motor | **Port 10** | 300 mm | `RIGHT_MOTOR_PORT = 10` |
-
-**6-Motor Configuration (ROBOT_6MOTOR):**
-
-| Device | Brain Port | Cable Length | Config Constant |
-|--------|-----------|-------------|-----------------|
-| Left Front Motor | **Port 1** | 300 mm | `LEFT_FRONT_PORT = 0` (port index 0) |
-| Left Middle Motor | **Port 2** | 300 mm | `LEFT_MID_PORT = 1` |
-| Left Rear Motor | **Port 3** | 300 mm | `LEFT_REAR_PORT = 2` |
-| Right Front Motor | **Port 4** | 300 mm | `RIGHT_FRONT_PORT = 3` |
-| Right Middle Motor | **Port 5** | 300 mm | `RIGHT_MID_PORT = 4` |
-| Right Rear Motor | **Port 6** | 300 mm | `RIGHT_REAR_PORT = 5` |
-| Inertial Sensor (IMU) | **Port 10** | 600 mm | `IMU_PORT = 9` (port index 9) |
+| Left Front Motor | **Port 1** | 300 mm | `LEFT_FRONT_MOTOR_PORT = 0` |
+| Left Middle Motor | **Port 2** | 300 mm | `LEFT_MID_MOTOR_PORT = 1` |
+| Left Rear Motor | **Port 3** | 300 mm | `LEFT_REAR_MOTOR_PORT = 2` |
+| Right Front Motor | **Port 4** | 300 mm | `RIGHT_FRONT_MOTOR_PORT = 3` |
+| Right Middle Motor | **Port 5** | 300 mm | `RIGHT_MID_MOTOR_PORT = 4` |
+| Right Rear Motor | **Port 6** | 300 mm | `RIGHT_REAR_MOTOR_PORT = 5` |
+| Forward Tracking Wheel | **Port 8** | 600 mm | `FORWARD_TRACKING_PORT = 7` |
+| Lateral Tracking Wheel | **Port 9** | 600 mm | `LATERAL_TRACKING_PORT = 8` |
+| Inertial Sensor (IMU) | **Port 10** | 600 mm | `IMU_PORT = 9` |
+| AI Vision Sensor | **Port 12** | 600 mm | (defined in vision module) |
 
 **Cable routing rules:**
 
@@ -538,73 +521,50 @@ VEX gears are Module 0.8:
 5. Tuck excess cable length under the Brain or beside the battery
 6. Double-check: push each connector in until it clicks (partially-seated connectors cause intermittent failures)
 
-> **If you use different ports:** Update the port constants in `include/config.h` for your active configuration.
+> **If you use different ports:** Update the port constants in `include/config.h`.
 
 ---
 
 ## 5. Software Configuration
 
-After assembly, first select your robot configuration in `include/config.h`:
+After assembly, verify the physical constants in `include/config.h` match your actual measurements:
+
+> **Note:** `config.h` is a flat file with no `#ifdef` or `#define` switching. Simply edit the constants directly.
 
 ```cpp
 // =====================================
-//   SELECT YOUR ROBOT CONFIGURATION
+//   PHYSICAL CONSTANTS
 // =====================================
-// Uncomment ONE of the following:
-#define ROBOT_2MOTOR    // Entry-level: 2 motors, green cartridge
-// #define ROBOT_6MOTOR // Advanced: 6 motors, blue cartridge
-```
-
-Then verify the physical constants match your actual measurements:
-
-**For ROBOT_2MOTOR:**
-```cpp
-constexpr double WHEEL_DIAMETER   = 0.1016;   // 4" omni = 0.1016 m
-constexpr double WHEEL_TRACK      = 0.381;    // MEASURE your robot! (m)
-constexpr double TICKS_PER_REV    = 360.0;    // Green cartridge direct drive
-
-constexpr int LEFT_MOTOR_PORT  = 1;
-constexpr int RIGHT_MOTOR_PORT = 10;
-constexpr int IMU_PORT         = 5;
-```
-
-**For ROBOT_6MOTOR:**
-```cpp
 constexpr double WHEEL_DIAMETER   = 0.08255;  // 3.25" omni = 0.08255 m
 constexpr double WHEEL_TRACK      = 0.330;    // MEASURE your robot! (m)
 constexpr double TICKS_PER_REV    = 300.0;    // Blue cartridge direct drive
 
-constexpr int LEFT_FRONT_PORT  = 0;
-constexpr int LEFT_MID_PORT    = 1;
-constexpr int LEFT_REAR_PORT   = 2;
-constexpr int RIGHT_FRONT_PORT = 3;
-constexpr int RIGHT_MID_PORT   = 4;
-constexpr int RIGHT_REAR_PORT  = 5;
-constexpr int IMU_PORT         = 9;
-constexpr int ENCODER_MOTOR_INDEX = 1;  // Middle motor for odometry
+// Motor ports (VEX SDK uses 0-indexed: physical Port 1 = index 0)
+constexpr int LEFT_FRONT_MOTOR_PORT  = 0;   // Port 1
+constexpr int LEFT_MID_MOTOR_PORT    = 1;   // Port 2
+constexpr int LEFT_REAR_MOTOR_PORT   = 2;   // Port 3
+constexpr int RIGHT_FRONT_MOTOR_PORT = 3;   // Port 4
+constexpr int RIGHT_MID_MOTOR_PORT   = 4;   // Port 5
+constexpr int RIGHT_REAR_MOTOR_PORT  = 5;   // Port 6
 
-// Competition-grade PID enhancements (6-motor only):
-constexpr double DRIVE_INTEGRAL_LIMIT  = 5.0;  // Anti-windup: max |∫error·dt|
-constexpr double DRIVE_D_FILTER        = 0.7;  // Derivative EMA smoothing
-constexpr double TURN_INTEGRAL_LIMIT   = 3.0;  // Turn anti-windup
-constexpr double TURN_D_FILTER         = 0.5;  // Turn derivative smoothing
-constexpr double BOOMERANG_LEAD        = 0.6;  // Carrot lead for curved paths
+constexpr int IMU_PORT = 9;                  // Port 10
+
+// Tracking wheels (perpendicular cross pattern)
+constexpr int  FORWARD_TRACKING_PORT = 7;    // Port 8 — forward tracking wheel
+constexpr int  LATERAL_TRACKING_PORT = 8;    // Port 9 — lateral tracking wheel
+constexpr double TRACKING_WHEEL_DIAMETER = 0.06985; // 2.75" omni
 ```
 
-**Also verify `src/main.cpp`:**
+**Motor initialization in `src/main.cpp`:**
 
 ```cpp
-// 2-motor config:
-motor LeftDriveSmart  = motor(LEFT_MOTOR_PORT,  ratio18_1, false); // green = 18:1
-motor RightDriveSmart = motor(RIGHT_MOTOR_PORT, ratio18_1, true);  // reversed
-
-// 6-motor config:
-motor LeftFront  = motor(LEFT_FRONT_PORT,  ratio6_1, true);   // blue = 6:1, left reversed
-motor LeftMid    = motor(LEFT_MID_PORT,    ratio6_1, true);
-motor LeftRear   = motor(LEFT_REAR_PORT,   ratio6_1, true);
-motor RightFront = motor(RIGHT_FRONT_PORT, ratio6_1, false);
-motor RightMid   = motor(RIGHT_MID_PORT,   ratio6_1, false);
-motor RightRear  = motor(RIGHT_REAR_PORT,  ratio6_1, false);
+// 6-motor differential drive — blue cartridge (6:1, 600 RPM)
+motor LeftFront  = motor(LEFT_FRONT_MOTOR_PORT,  ratio6_1, true);   // left side reversed
+motor LeftMid    = motor(LEFT_MID_MOTOR_PORT,    ratio6_1, true);
+motor LeftRear   = motor(LEFT_REAR_MOTOR_PORT,   ratio6_1, true);
+motor RightFront = motor(RIGHT_FRONT_MOTOR_PORT, ratio6_1, false);
+motor RightMid   = motor(RIGHT_MID_MOTOR_PORT,   ratio6_1, false);
+motor RightRear  = motor(RIGHT_REAR_MOTOR_PORT,  ratio6_1, false);
 ```
 
 ---
@@ -648,19 +608,19 @@ Run these checks in order after first upload. Each one validates a layer of the 
 **Verifies:** IMU calibration, `pre_auton()` runs
 
 - Power on → program runs → screen shows **"Ready."** within ~3 seconds
-- **Fail?** IMU not connected to Port 5, or bad cable
+- **Fail?** IMU not connected to Port 10, or bad cable
 
 ### ✅ Check 2: Motor direction
 
 **Verifies:** HAL motor layer, correct wiring, reversed flag
 
 1. **Put robot on blocks** (wheels off ground — safety first!)
-2. Push left joystick forward → left wheel(s) spin forward
-3. Push right joystick forward → right wheel(s) spin forward
-4. **6-motor only:** Verify all 3 wheels on each side spin together at the same speed
+3. Push left joystick forward → left wheels (3) spin forward
+3. Push right joystick forward → right wheels (3) spin forward
+4. Verify all 3 wheels on each side spin together at the same speed
 
 - **Fail?** Flip `true`↔`false` for that motor in `main.cpp`
-- **6-motor fail?** Check that left-side motors have `reversed=true` and right-side have `reversed=false`
+- **Still wrong?** Check that left-side motors have `reversed=true` and right-side have `reversed=false`
 
 ### ✅ Check 3: Encoder counting
 
@@ -673,8 +633,7 @@ Run these checks in order after first upload. Each one validates a layer of the 
        get_left_encoder_ticks(), get_right_encoder_ticks());
    ```
 2. Hand-rotate each wheel one full turn:
-   - **2-motor (green):** ~360 (±5) ticks per revolution
-   - **6-motor (blue):** ~300 (±5) ticks per revolution — encoder reads from middle motor (`ENCODER_MOTOR_INDEX=1`)
+   - **Blue cartridge (6:1):** ~300 (±5) ticks per revolution
 
 ### ✅ Check 4: IMU heading
 
@@ -736,10 +695,10 @@ Run these checks in order after first upload. Each one validates a layer of the 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
 | Odometry drifts | `WHEEL_DIAMETER` or `WHEEL_TRACK` wrong | Re-measure precisely with calipers |
-| Turns overshoot | PID gains too aggressive | Reduce `TURN_KP`, increase `TURN_KD`. 6M: try adjusting `TURN_D_FILTER` |
-| Turn oscillates indefinitely | Anti-windup not sufficient, or D too low | 6M: increase `TURN_INTEGRAL_LIMIT` or `TURN_KD` |
+| Turns overshoot | PID gains too aggressive | Reduce `TURN_KP`, increase `TURN_KD`. Try adjusting `TURN_D_FILTER` |
+| Turn oscillates indefinitely | Anti-windup not sufficient, or D too low | Increase `TURN_INTEGRAL_LIMIT` or `TURN_KD` |
 | Drives past target | `MAX_VELOCITY` too high | Reduce `MAX_VELOCITY` in config.h |
-| Boomerang path too wide | `BOOMERANG_LEAD` too small | Increase `BOOMERANG_LEAD` (6M only) |
+| Boomerang path too wide | `BOOMERANG_LEAD` too small | Increase `BOOMERANG_LEAD` |
 | Boomerang path too tight | `BOOMERANG_LEAD` too large | Decrease `BOOMERANG_LEAD` toward 0.3 |
 | `make` fails | SDK path wrong | Ensure VEX extension installed, SDK path exists |
 | `make test` fails | Tests need host compiler | Run `xcode-select --install` for g++ on Mac |
@@ -748,44 +707,26 @@ Run these checks in order after first upload. Each one validates a layer of the 
 
 ## 9. Appendix: Part Number Quick Reference
 
-### 2-Motor Configuration (ROBOT_2MOTOR)
-
-```
-╔══════════════════════════════════════════════════════════════════════╗
-║  VEX V5 2-MOTOR DIFFERENTIAL DRIVE — PARTS SUMMARY                 ║
-╠══════════════════════════════════════════════════════════════════════╣
-║  V5 Smart Motor (green cart.)           276-4840       ×2           ║
-║  V5 Inertial Sensor                     276-4855       ×1           ║
-║  Smart Cable 300mm                      276-4850       ×2           ║
-║  Smart Cable 600mm                      276-4851       ×1           ║
-║  4" Omni Wheel                          276-3526       ×2           ║
-║  HS Shaft 4"                            276-2293       ×2           ║
-║  HS Motor Shaft Insert                  276-8532       ×2           ║
-║  2.75" Omni Wheel (support)             276-3525       ×1           ║
-║  Standard Shaft 2"                      276-2011       ×1           ║
-╚══════════════════════════════════════════════════════════════════════╝
-```
-
-### 6-Motor Configuration (ROBOT_6MOTOR)
-
 ```
 ╔══════════════════════════════════════════════════════════════════════╗
 ║  VEX V5 6-MOTOR DIFFERENTIAL DRIVE — PARTS SUMMARY                 ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  V5 Smart Motor (blue cart.)            276-4840       ×6           ║
 ║  V5 Inertial Sensor                     276-4855       ×1           ║
+║  V5 Rotation Sensor                     276-4856       ×2           ║
+║  V5 AI Vision Sensor                    276-4857       ×1           ║
 ║  Smart Cable 300mm                      276-4850       ×6           ║
-║  Smart Cable 600mm                      276-4851       ×1           ║
-║  3.25" Omni Wheel                       276-3524       ×6           ║
+║  Smart Cable 600mm                      276-4851       ×4           ║
+║  3.25" Omni Wheel (drive)               276-3524       ×6           ║
+║  2.75" Omni Wheel (tracking)            276-3525       ×2           ║
 ║  HS Shaft 4"                            276-2293       ×6           ║
 ║  HS Motor Shaft Insert                  276-8532       ×6           ║
 ║  HS Bearing Flat                        276-2310       ×12          ║
 ║  HS Clamping Shaft Collar               276-2308       ×12          ║
-║  (No support wheel needed — 6 driven wheels provide stability)      ║
 ╚══════════════════════════════════════════════════════════════════════╝
 ```
 
-> **Common parts (both configs):** V5 Brain, V5 Battery, V5 Controller, V5 Battery Charger, USB-C Cable, C-Channels, cross braces, angle brackets, fasteners, spacers. See BOM Section 1 for complete details.
+> **Common parts:** V5 Brain, V5 Battery, V5 Controller, V5 Battery Charger, USB-C Cable, C-Channels, cross braces, angle brackets, fasteners, spacers. See BOM Section 1 for complete details.
 
 ---
 
